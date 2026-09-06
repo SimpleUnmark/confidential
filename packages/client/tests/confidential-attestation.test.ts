@@ -62,6 +62,36 @@ describe("validateConfidentialSpaceClaims", () => {
     });
   });
 
+  it("accepts omitted empty override claims emitted by the production launcher", () => {
+    const base = claims();
+    expect(validateConfidentialSpaceClaims({
+      ...base,
+      submods: {
+        ...base.submods,
+        container: {
+          image_digest: digest,
+          args: ["/usr/bin/python3", "-m", "simpleunmark_confidential"],
+        },
+      },
+    }, nonce)).toMatchObject({ imageDigest: digest });
+  });
+
+  it.each([null, {}, "", 0, ["sh"]])("rejects malformed or nonempty cmd_override %j", (value) => {
+    const base = claims();
+    expect(() => validateConfidentialSpaceClaims({
+      ...base,
+      submods: { ...base.submods, container: { ...base.submods.container, cmd_override: value } },
+    }, nonce)).toThrow("command was overridden");
+  });
+
+  it.each([null, [], "", 0, { PORT: "9000" }])("rejects malformed or nonempty env_override %j", (value) => {
+    const base = claims();
+    expect(() => validateConfidentialSpaceClaims({
+      ...base,
+      submods: { ...base.submods, container: { ...base.submods.container, env_override: value } },
+    }, nonce)).toThrow("environment setting was overridden");
+  });
+
   it("rejects command or environment overrides", () => {
     const base = claims();
     expect(() => validateConfidentialSpaceClaims({

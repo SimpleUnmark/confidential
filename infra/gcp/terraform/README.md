@@ -12,6 +12,8 @@ pool. It creates:
 - a least-purpose workload service account with Confidential Computing workload
   and Artifact Registry read roles;
 - secret-scoped Secret Manager access for the workload service account;
+- Cloud Logging write permission for Confidential Space launcher diagnostics,
+  with container stdout/stderr redirection still disabled;
 - Cloud Router and Cloud NAT for outbound provider and receipt calls;
 - an external global HTTPS load balancer and Google-managed certificate;
 - a firewall rule that exposes port 8080 only to Google's load-balancer and
@@ -114,6 +116,57 @@ then apply the new workload image. Terraform replaces the single stateless VM
 so the launcher reads the new digest at boot. Drain outstanding work first,
 expect a brief v1 outage, verify the attested digest in the browser, and finally
 remove the old digest from a later web build.
+
+## Startup diagnostics
+
+The workload service account has `roles/logging.logWriter` so Google's
+Confidential Space launcher can retain boot, image-pull, attestation, and exit
+diagnostics in the `confidential-space-launcher` log. Container stdout/stderr
+remains disabled by `tee-container-log-redirect=false` and the image's
+`tee.launch_policy.log_redirect=never` policy. Do not enable container log
+redirection, SSH, or a debug OS image on this production VM to troubleshoot it.
+
+The logging role permits writes, not reads. It is not an IAM restriction to
+launcher-only messages: the workload shares this service account and could
+write directly to the Logging API. The reviewed workload must therefore
+continue to avoid logging request contents or credentials. Launcher diagnostics
+can contain deployment metadata and attestation claims; keep log access private.
+
+When adding the logging grant to an existing deployment, run `terraform plan`
+and `terraform apply` from this directory. The intended change is one new IAM
+member, not a VM replacement or an image rebuild. Stop and review any unrelated
+changes. The grant does not recover earlier missing logs or automatically start
+a stopped VM.
+
+After applying, the operator can start the existing stopped VM explicitly
+(this is an operational action, not an alternative provisioning path):
+
+```bash
+gcloud compute instances start simpleunmark-confidential-v1 \
+  --project=simple-unmark-prod \
+  --zone=europe-west1-b
+```
+
+Allow IAM propagation before starting it. Read launcher diagnostics using the
+current instance ID (a replacement changes that ID):
+
+```bash
+workload_instance_id=$(gcloud compute instances describe simpleunmark-confidential-v1 \
+  --project=simple-unmark-prod --zone=europe-west1-b --format='value(id)')
+gcloud logging read \
+  "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${workload_instance_id}\" AND log_id(\"confidential-space-launcher\")" \
+  --project=simple-unmark-prod --freshness=1h --limit=100 --order=asc --format=json
+```
+
+No entries can mean log delivery is still pending; it does not prove startup
+succeeded. Inspect VM status and `/healthz` as well. A launcher error can stop
+the production VM even with `tee-restart-policy=Always`; not all launcher errors
+are retryable. Diagnose the recorded error before changing credentials, the
+image, or the security policy.
+
+References: [launcher logging implementation](https://github.com/google/go-tpm-tools/blob/main/launcher/internal/logging/logging.go),
+[container output handling](https://github.com/google/go-tpm-tools/blob/main/launcher/container_runner.go),
+and [Google's monitoring guide](https://docs.cloud.google.com/confidential-computing/confidential-space/docs/monitor-debug).
 
 ## Deliberate v1 limits
 

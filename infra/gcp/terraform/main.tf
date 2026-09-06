@@ -72,6 +72,15 @@ resource "google_project_iam_member" "confidential_workload_user" {
   member  = "serviceAccount:${google_service_account.workload.email}"
 }
 
+# Retain Confidential Space launcher diagnostics, including startup failures.
+# This does not enable container stdout/stderr redirection: keep the VM's
+# tee-container-log-redirect=false and the image's log_redirect=never policy.
+resource "google_project_iam_member" "launcher_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.workload.email}"
+}
+
 resource "google_artifact_registry_repository_iam_member" "artifact_reader" {
   project    = var.project_id
   location   = var.region
@@ -179,6 +188,7 @@ resource "google_compute_instance" "workload" {
     google_compute_router_nat.workload,
     google_artifact_registry_repository_iam_member.artifact_reader,
     google_project_iam_member.confidential_workload_user,
+    google_project_iam_member.launcher_log_writer,
     google_secret_manager_secret_iam_member.workload_reader,
   ]
 }

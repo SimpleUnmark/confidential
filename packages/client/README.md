@@ -19,6 +19,16 @@ Before encrypting, generate a challenge, request the workload attestation, deriv
 fingerprint and supported suite. `validateConfidentialSpaceClaims` checks claims
 only; it must not replace JWT signature verification.
 
+Google's production tokens may omit `cmd_override` and `env_override` when
+there are no overrides. Version 0.1.1 accepts absence or explicit empty
+collections, while rejecting null, malformed, and nonempty values. This was
+confirmed with a signed live token from Confidential Space image 260701.
+The [launcher](https://github.com/google/go-tpm-tools/blob/main/launcher/container_runner.go)
+measures individual override events only when supplied. Continue to approve
+only digest-pinned images whose launch policy denies command/environment
+overrides; absence of these two optional claims does not relax any identity,
+signature, nonce, hardware, Secure Boot, debug, or memory-monitoring checks.
+
 From the repository root, run `pnpm install`,
 `pnpm --filter @simpleunmark/confidential-client test`, and `pnpm client:pack`.
 The resulting tarball in `artifacts/` contains only package metadata, documentation,
