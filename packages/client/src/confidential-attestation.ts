@@ -75,7 +75,7 @@ export function validateConfidentialSpaceClaims(
       ? [payload.eat_nonce]
       : [];
   const imageDigest = container.image_digest;
-  const environmentOverrides = record(container.env_override);
+  const environmentOverrides = container.env_override;
   const commandOverrides = container.cmd_override;
   const projectNumber = gce.project_number;
   const serviceAccounts = payload.google_service_accounts;
@@ -112,10 +112,22 @@ export function validateConfidentialSpaceClaims(
     throw new Error("The workload image digest is not approved.");
   }
   if (!tokenNonces.includes(nonce)) throw new Error("The attestation nonce does not match.");
-  if (!Array.isArray(commandOverrides) || commandOverrides.length !== 0) {
+  // The launcher emits one override event per argument/environment entry.
+  // Google can omit these claims entirely when there are no override events
+  // (observed on the production 260701 image), instead of returning [] / {}.
+  // Accept omission, but never coerce null, malformed, or nonempty claims.
+  // The signature, pinned image, production/debug state and nonce checks above
+  // remain mandatory; approved images must also deny overrides in launch policy.
+  if (commandOverrides !== undefined
+    && (!Array.isArray(commandOverrides) || commandOverrides.length !== 0)) {
     throw new Error("The workload command was overridden.");
   }
-  if (Object.keys(environmentOverrides).length !== 0) {
+  if (environmentOverrides !== undefined && (
+    environmentOverrides === null
+    || typeof environmentOverrides !== "object"
+    || Array.isArray(environmentOverrides)
+    || Object.keys(environmentOverrides).length !== 0
+  )) {
     throw new Error("A workload environment setting was overridden.");
   }
   if (typeof projectNumber !== "string" || !approvedProjects.has(projectNumber)) {
