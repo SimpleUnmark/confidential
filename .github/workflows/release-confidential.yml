@@ -1,0 +1,128 @@
+name: Release confidential workload
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: confidential-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build-publish-attest:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      DOCKERHUB_IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/simpleunmark-confidential
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate measured release configuration
+        run: |
+          for variable in \
+            DOCKERHUB_USERNAME \
+            DOCKERHUB_IMAGE
+          do
+            if [[ -z "${!variable}" ]]; then
+              echo "Required production variable is empty: ${variable}" >&2
+              exit 2
+            fi
+          done
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Compute image metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.DOCKERHUB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Record build metadata
+        id: build-values
+        run: echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the measured image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: apps/confidential-server
+          file: apps/confidential-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          provenance: false
+          build-args: |
+            BUILD_DATE=${{ steps.build-values.outputs.created }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Attest Docker Hub build provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.DOCKERHUB_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+      - name: Package reviewed browser client
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm client:pack
+      - name: Attest browser client provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/*.tgz
+
+      - name: Write release manifest
+        env:
+          RELEASE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          jq --null-input \
+            --arg commit "$GITHUB_SHA" \
+            --arg digest "$RELEASE_DIGEST" \
+            --arg dockerhub "$DOCKERHUB_IMAGE" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg clientSha256 "$(sha256sum artifacts/*.tgz | cut -d ' ' -f 1)" \
+            '{schemaVersion: 2, repository: $repository, commit: $commit, digest: $digest, images: [$dockerhub], clientSha256: $clientSha256}' \
+            > release-manifest.json
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v6
+        with:
+          name: confidential-release-${{ github.sha }}
+          path: |
+            release-manifest.json
+            artifacts/*.tgz
+          if-no-files-found: error

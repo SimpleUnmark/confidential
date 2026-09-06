@@ -1,0 +1,28 @@
+output "public_ip" {
+  description = "Load balancer address published by the Terraform-managed Cloudflare A record."
+  value       = google_compute_global_address.workload.address
+}
+
+output "confidential_server_public_url" {
+  description = "Set CONFIDENTIAL_SERVER_PUBLIC_URL in the web deployment to this value."
+  value       = "https://${var.domain_name}"
+}
+
+output "workload_service_account" {
+  description = "Include this exact identity in NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_SERVICE_ACCOUNTS."
+  value       = google_service_account.workload.email
+}
+
+output "project_number" {
+  description = "Include this value in NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_GCP_PROJECT_NUMBERS."
+  value       = data.google_project.current.number
+}
+
+output "expected_image_digest" {
+  description = "Include this digest in NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_IMAGE_DIGESTS."
+  value       = regex("sha256:[a-f0-9]{64}$", var.image_reference)
+}
+
+data "google_project" "current" {
+  project_id = var.project_id
+}

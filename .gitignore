@@ -216,3 +216,34 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# SimpleUnmark monorepo and release outputs
+node_modules/
+.pnpm-store/
+.vendor/
+artifacts/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env.*
+!.env.example
+
+# Never publish Terraform state, local backend caches, plans, or credentials.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!infra/gcp/foundation/production.auto.tfvars
+!infra/gcp/terraform/production.auto.tfvars
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.pem
+*.key

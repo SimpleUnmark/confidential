@@ -1,0 +1,6 @@
+cryptography==50.0.1
+fastapi==0.141.1
+httpx==0.28.1
+pyhpke==0.6.5
+starlette==1.6.0
+uvicorn==0.35.0

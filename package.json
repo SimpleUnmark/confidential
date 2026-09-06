@@ -1,0 +1,13 @@
+{
+  "name": "simpleunmark-confidential",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "dev:server": "pnpm --filter @simpleunmark/confidential-server dev",
+    "server:setup": "pnpm --filter @simpleunmark/confidential-server vendor:sync && python3 -m venv apps/confidential-server/.venv && apps/confidential-server/.venv/bin/python -m pip install -r apps/confidential-server/requirements-dev.txt",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "client:pack": "cd packages/client && pnpm pack --pack-destination ../../artifacts"
+  }
+}

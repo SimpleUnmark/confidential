@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simpleunmark-confidential"
+version = "0.1.0"
+description = "Content-processing workload for Simple Unmark Confidential Space"
+requires-python = ">=3.13"
+dependencies = [
+  "cryptography==50.0.1",
+  "fastapi==0.141.1",
+  "httpx==0.28.1",
+  "pyhpke==0.6.5",
+  "starlette==1.6.0",
+  "uvicorn==0.35.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["simpleunmark_confidential*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["simpleunmark_confidential"]

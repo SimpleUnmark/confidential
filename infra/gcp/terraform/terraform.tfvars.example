@@ -1,0 +1,13 @@
+# Copy to the gitignored terraform.tfvars in this directory, then fill in values.
+# Public project/region/domain settings are in production.auto.tfvars.
+image_reference = "europe-west3-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
+cloudflare_zone_id = "REPLACE_WITH_SIMPLEUNMARK_COM_ZONE_ID"
+
+# Never commit real values. Both are written to ordinary VM metadata and to
+# Terraform state in this simple v1 deployment.
+deepinfra_api_key          = "REPLACE_ME"
+confidential_shared_secret = "REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
+
+# Digest changes replace this stateless single VM so the launcher boots the new
+# payload. Enabling deletion protection deliberately blocks that rotation.
+deletion_protection = false

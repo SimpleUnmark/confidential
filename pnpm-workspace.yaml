@@ -1,0 +1,6 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# No dependency lifecycle scripts are needed for the browser client.
+allowBuilds: {}

@@ -1,0 +1,33 @@
+{
+  "name": "@simpleunmark/confidential-client",
+  "version": "0.1.0",
+  "description": "Browser verification, HPKE encryption, and cleaning protocol for SimpleUnmark Confidential Space",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SimpleUnmark/confidential.git",
+    "directory": "packages/client"
+  },
+  "files": ["src", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md"],
+  "exports": {
+    "./attestation": "./src/confidential-attestation.ts",
+    "./crypto": "./src/confidential-crypto.ts",
+    "./protocol": "./src/clean-protocol.ts",
+    "./invisibles": "./src/invisibles.ts",
+    "./measurements": "./src/measurements.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hpke/core": "1.9.0",
+    "jose": "6.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

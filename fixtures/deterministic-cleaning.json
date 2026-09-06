@@ -1,0 +1,66 @@
+[
+  {
+    "name": "zero-width, tag and no-break space",
+    "input": "A\u200bB\u00a0C\udb40\udc67",
+    "text": "AB C",
+    "removed": 2,
+    "normalizedSpaces": 1,
+    "words": 3
+  },
+  {
+    "name": "direction controls and typographic spaces",
+    "input": "one‮two three⁠",
+    "text": "onetwo three",
+    "removed": 2,
+    "normalizedSpaces": 1,
+    "words": 3
+  },
+  {
+    "name": "load-bearing joiners are preserved",
+    "input": "❤️‍🔥 Persian می‌روم and isolated​mark",
+    "text": "❤️‍🔥 Persian می‌روم and isolatedmark",
+    "removed": 1,
+    "normalizedSpaces": 0,
+    "words": 7
+  },
+  {
+    "name": "ordinary multilingual text is unchanged",
+    "input": "Привет, свят! 中文測試",
+    "text": "Привет, свят! 中文測試",
+    "removed": 0,
+    "normalizedSpaces": 0,
+    "words": 3
+  },
+  {
+    "name": "new reserved carriers, noncharacters and private use are removed",
+    "input": "A\u2065B\ufff0C\ufdd0D\ue000E",
+    "text": "ABCDE",
+    "removed": 4,
+    "normalizedSpaces": 0,
+    "words": 5
+  },
+  {
+    "name": "directional isolates and paired embeddings are preserved",
+    "input": "\u2066RTL\u2069 \u202aembedded\u202c",
+    "text": "\u2066RTL\u2069 \u202aembedded\u202c",
+    "removed": 0,
+    "normalizedSpaces": 0,
+    "words": 2
+  },
+  {
+    "name": "an invalid cross-script joiner is removed",
+    "input": "Latin\u200dtext",
+    "text": "Latintext",
+    "removed": 1,
+    "normalizedSpaces": 0,
+    "words": 2
+  },
+  {
+    "name": "decomposed Unicode is not normalized",
+    "input": "Cafe\u0301",
+    "text": "Cafe\u0301",
+    "removed": 0,
+    "normalizedSpaces": 0,
+    "words": 1
+  }
+]

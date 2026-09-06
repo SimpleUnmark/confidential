@@ -1,0 +1,12 @@
+{
+  "name": "@simpleunmark/confidential-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "vendor:sync": "bash scripts/fetch-watermarks-remover.sh",
+    "dev": ".venv/bin/python -m simpleunmark_confidential",
+    "lint": ".venv/bin/python -m ruff check .",
+    "test": ".venv/bin/python -m pytest",
+    "typecheck": ".venv/bin/python -m mypy simpleunmark_confidential"
+  }
+}
