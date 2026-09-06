@@ -6,6 +6,11 @@ file migration. Review the complete public diff before the first push.
 
 ## Terraform continuity
 
+This section records the original repository split. The subsequent
+[Belgium regional migration](../infra/gcp/belgium-migration.md) supersedes its
+Frankfurt deployment target and no-change plan expectation. The bucket and
+state prefixes below still apply; do not repeat the original split migration.
+
 The production project stays `simple-unmark-prod`, the region stays Frankfurt,
 and the state bucket stays `simple-unmark-prod-tfstate`. Foundation state uses
 `confidential/foundation`; runtime uses `confidential/runtime`. Resource names

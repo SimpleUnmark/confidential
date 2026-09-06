@@ -41,6 +41,14 @@ jobs:
           --tag simpleunmark-confidential:ci
           apps/confidential-server
 
+      - name: Smoke test production bootstrap dependencies offline
+        run: >-
+          docker run --rm --network=none --platform linux/amd64
+          --entrypoint /usr/bin/python3 simpleunmark-confidential:ci
+          -c 'import google_crc32c; from simpleunmark_confidential.bootstrap import bootstrap_credentials;
+          assert google_crc32c.value(b"123456789") == 0xe3069283;
+          print("Secret Manager bootstrap imports OK")'
+
   terraform:
     runs-on: ubuntu-latest
     steps:

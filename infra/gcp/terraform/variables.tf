@@ -6,13 +6,13 @@ variable "project_id" {
 variable "region" {
   description = "GCP region for the subnet, router, and Cloud NAT."
   type        = string
-  default     = "europe-west3"
+  default     = "europe-west1"
 }
 
 variable "zone" {
   description = "Zone that supports N2D Confidential Space instances."
   type        = string
-  default     = "europe-west3-b"
+  default     = "europe-west1-b"
 }
 
 variable "name" {
@@ -22,7 +22,7 @@ variable "name" {
 }
 
 variable "domain_name" {
-  description = "Public DNS name for the confidential workload, managed as a Cloudflare A record."
+  description = "Public hostname for the HTTPS certificate. The operator manages its DNS record separately."
   type        = string
 }
 
@@ -32,13 +32,8 @@ variable "repository_id" {
   default     = "workloads"
 }
 
-variable "cloudflare_zone_id" {
-  description = "Existing Cloudflare zone ID for simpleunmark.com. The zone itself is not created or changed."
-  type        = string
-}
-
 variable "image_reference" {
-  description = "Artifact Registry OCI image pinned by digest, for example europe-west3-docker.pkg.dev/project/repo/image@sha256:..."
+  description = "Artifact Registry OCI image pinned by digest, for example europe-west1-docker.pkg.dev/project/repo/image@sha256:..."
   type        = string
 
   validation {
@@ -47,20 +42,25 @@ variable "image_reference" {
   }
 }
 
-variable "deepinfra_api_key" {
-  description = "DeepInfra API key stored in ordinary instance metadata. This sensitive value is also stored in Terraform state."
+variable "deepinfra_secret_version" {
+  description = "Numeric Secret Manager version ID; never the credential value."
   type        = string
-  sensitive   = true
-}
-
-variable "confidential_shared_secret" {
-  description = "HMAC key shared with the web app, stored in ordinary instance metadata. Generate at least 32 random bytes."
-  type        = string
-  sensitive   = true
+  default     = "1"
 
   validation {
-    condition     = length(var.confidential_shared_secret) >= 32
-    error_message = "confidential_shared_secret must contain at least 32 characters."
+    condition     = can(regex("^[1-9][0-9]*$", var.deepinfra_secret_version))
+    error_message = "Pin an explicit positive version number, not latest."
+  }
+}
+
+variable "shared_secret_version" {
+  description = "Numeric version of the HMAC key also configured in the website backend."
+  type        = string
+  default     = "1"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.shared_secret_version))
+    error_message = "Pin an explicit positive version number, not latest."
   }
 }
 

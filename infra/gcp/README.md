@@ -3,11 +3,14 @@
 The operator reviews and runs all cloud mutations, image pushes, Terraform
 plans/applies, and state operations. Assistant-side gcloud usage is read-only.
 The existing project and Terraform-state bucket are the only infrastructure
-bootstrap exceptions; all other service resources are managed by Terraform.
+bootstrap exceptions. DNS is also managed manually by the operator; the other
+service resources are managed by Terraform.
 
 For the repository split, read [migration notes](../../docs/repository-migration.md)
-first. The already-applied foundation keeps its original bucket, state prefix,
-and resource addresses. Do not recreate it.
+first. The already-applied foundation keeps its original bucket and state prefix.
+The [Belgium migration](belgium-migration.md) uses a declarative address move to
+preserve the Frankfurt repository and creates a second repository in Belgium.
+Do not recreate the Frankfurt repository or move the state bucket.
 
 ## 1. Foundation
 
@@ -21,9 +24,10 @@ terraform init
 terraform plan
 ```
 
-The operator applies only after reviewing the plan. Production uses Frankfurt
-(`europe-west3`) and registry
-`europe-west3-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential`.
+The operator applies only after reviewing the plan. Production targets Belgium
+(`europe-west1`) and registry
+`europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential`.
+The existing Frankfurt registry is retained for rollback during cutover.
 
 ## 2. Public release and verified image transfer
 
@@ -50,10 +54,10 @@ and copies the immutable manifest. These are release operations, not Terraform
 resource provisioning; no GCP key is stored in GitHub.
 
 ```bash
-gcloud auth configure-docker europe-west3-docker.pkg.dev
+gcloud auth configure-docker europe-west1-docker.pkg.dev
 
 SOURCE_IMAGE=docker.io/simpleunmark/simpleunmark-confidential@sha256:DIGEST
-DESTINATION_IMAGE=europe-west3-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential:release-COMMIT
+DESTINATION_IMAGE=europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential:release-COMMIT
 
 docker buildx imagetools create --prefer-index=false --tag "$DESTINATION_IMAGE" "$SOURCE_IMAGE"
 docker buildx imagetools inspect "$DESTINATION_IMAGE"
@@ -67,20 +71,24 @@ repository; a registry copy does not change that source identity.
 ## 3. Runtime
 
 Follow [terraform/](terraform/README.md) for the private-IP Confidential Space
-VM, least-purpose IAM, VPC, NAT, HTTPS load balancer, certificate, and DNS-only
-Cloudflare record. From the runtime directory use plain `terraform init`,
+VM, least-purpose IAM, VPC, NAT, HTTPS load balancer, and certificate. From the
+runtime directory use plain `terraform init`,
 `terraform plan`, and, after review, `terraform apply`.
 
-Credentials go in the ignored `terraform.tfvars`; Cloudflare authentication
-comes from the local `CLOUDFLARE_API_TOKEN`. Never publish those files, state,
-plans, or `.terraform/`. The legacy `deploy-confidential-space.sh` is retained
-for reference only and must not be used alongside this Terraform deployment.
+Follow [the Secret Manager guide](secret-manager-migration.md) before runtime
+deployment. Upload credential values directly to Secret Manager. Checked-in
+`production.auto.tfvars` holds the image digest and numeric secret version pins;
+no private tfvars, Cloudflare token, or zone ID is required. After apply, use `terraform output` to obtain `public_ip`, then
+manually point the `confidential.simpleunmark.com` A record at that IP with
+proxying disabled (DNS-only). Never publish credential files, state,
+plans, or `.terraform/`. The legacy `deploy-confidential-space.sh` is disabled to prevent accidental plaintext-metadata deployment.
 
-v1 intentionally uses no Secret Manager, Cloud KMS, STS, or Confidential Space
-workload identity pool. The DeepInfra key and shared HMAC key are present in
-ordinary VM metadata and Terraform state. IAM principals allowed to read them
-can obtain those credentials. Neither credential decrypts the request-scoped
-HPKE payloads; the HMAC key can forge authorizations and accounting receipts.
+The workload retrieves its DeepInfra key and shared HMAC key directly from
+Secret Manager with the attached VM service account. Secret values never enter
+Terraform or VM metadata. No customer-managed KMS, STS, or runtime workload
+identity pool is needed. This is IAM-based access, not attestation-gated release:
+administrators with IAM/identity control can still obtain the credentials.
+Neither credential decrypts request-scoped HPKE payloads.
 
 The production payload fixes the receipt URL, allowed browser origin,
 DeepInfra destination/model, and attestation audience. No container environment

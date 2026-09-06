@@ -54,27 +54,34 @@ The signed capability binds the media category, operation, extension, MIME type,
 and exact original byte count to prevent operation or type substitution and
 under-billing.
 
-## Minimal credential bootstrap
+## Runtime credential bootstrap
 
-This v1 workload does not use Secret Manager, Cloud KMS, STS, or a runtime
-workload identity pool. Local development reads `DEEPINFRA_API_KEY` and
-`CONFIDENTIAL_SHARED_SECRET` from the process environment. In Confidential
-Space, missing values are read from these ordinary GCE instance metadata
-attributes:
+Production (`REQUIRE_CLIENT_ATTESTATION=1`) reads two numeric Secret Manager
+version references from GCE metadata:
 
-- `simpleunmark-deepinfra-api-key`
-- `simpleunmark-shared-secret`
+- `simpleunmark-deepinfra-secret-version`
+- `simpleunmark-shared-secret-version`
 
-This is deliberately the low-complexity option. The credential values are not
-included in the image or Confidential Space token, but anyone authorized to
-read or change the VM's instance metadata can obtain or replace them. A leaked
-DeepInfra key exposes that provider account. A leaked HMAC key permits forged
-cleaning capabilities and receipts/billing records, but it cannot decrypt HPKE
-payloads because it is not used in their key schedule.
+It obtains a short-lived OAuth token from the attached VM service account and
+fetches both values directly over HTTPS from Secret Manager. Secret payloads are
+CRC32C-checked and held in Python memory, not written to disk or environment
+variables inherited by FFmpeg. The service does not start if either reference,
+permission, enabled version, checksum, or credential format is invalid. It does
+not fall back to plaintext metadata or environment credentials in production.
+Local development still reads the two credentials from the environment.
 
-The production image fixes the DeepInfra host/model, browser origin, receipt
-endpoint, attestation audience, and attestation requirement. Confidential
-Space launch policy denies all container command and environment overrides.
+Terraform creates only secret containers, version references, and secret-scoped
+IAM grants. The operator uploads values directly; see
+[the migration and rotation guide](../../infra/gcp/secret-manager-migration.md).
+Explicit numeric version pins ensure startup is reproducible; Terraform replaces
+the workload when a version changes so it reloads the credentials.
+
+No customer-managed KMS key, STS, runtime workload identity pool, or downloaded
+service-account key is required. This is **not attestation-gated secret release**.
+Administrators able to change IAM or reuse/impersonate the workload identity can
+still access the secrets. A leaked DeepInfra key exposes the provider account.
+A leaked HMAC key permits forged authorizations and receipts, but neither key
+decrypts recorded HPKE payloads.
 
 ## Upstream cleaner
 
@@ -129,8 +136,8 @@ The guarantee has explicit limits:
 
 - DeepInfra receives and returns plaintext over its normal authenticated HTTPS
   API. It is not protected by this HPKE layer.
-- Ordinary VM metadata does not protect the two runtime credentials from the
-  GCP project operator.
+- Secret Manager limits routine credential access but does not protect these
+  credentials from administrators who can grant access or reuse the service identity.
 - Request counts, destination, timing, and ciphertext sizes remain observable.
 - Media category, operation, extension, and exact byte size remain visible to the
   authorization layer.

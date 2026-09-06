@@ -6,15 +6,8 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 7.45"
     }
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 5.15"
-    }
   }
 }
-
-# Uses CLOUDFLARE_API_TOKEN from the operator's environment.
-provider "cloudflare" {}
 
 provider "google" {
   project = var.project_id

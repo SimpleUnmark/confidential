@@ -9,9 +9,13 @@ locals {
 
 # The Confidential Space launcher reads the payload image reference only at
 # boot. Replacing this trigger therefore replaces the single stateless VM on an
-# image-digest change instead of leaving the old payload running silently.
+# image-digest or secret-version change instead of retaining stale code/keys.
 resource "terraform_data" "workload_image" {
-  triggers_replace = [var.image_reference]
+  triggers_replace = [
+    var.image_reference,
+    var.deepinfra_secret_version,
+    var.shared_secret_version,
+  ]
 }
 
 # APIs and this registry are owned by ../foundation and applied first.
@@ -76,6 +80,21 @@ resource "google_artifact_registry_repository_iam_member" "artifact_reader" {
   member     = "serviceAccount:${google_service_account.workload.email}"
 }
 
+# Container metadata only: never read secret version payloads in Terraform.
+data "google_secret_manager_secret" "workload" {
+  for_each  = toset(["simpleunmark-deepinfra-api-key", "simpleunmark-confidential-shared-secret"])
+  project   = var.project_id
+  secret_id = each.key
+}
+
+resource "google_secret_manager_secret_iam_member" "workload_reader" {
+  for_each  = data.google_secret_manager_secret.workload
+  project   = var.project_id
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.workload.email}"
+}
+
 data "google_compute_image" "confidential_space" {
   project = "confidential-space-images"
   family  = "confidential-space"
@@ -132,15 +151,15 @@ resource "google_compute_instance" "workload" {
   }
 
   metadata = {
-    tee-image-reference            = var.image_reference
-    tee-restart-policy             = "Always"
-    tee-container-log-redirect     = "false"
-    tee-mount                      = "type=tmpfs,source=tmpfs,destination=/tmp/simpleunmark,size=1073741824"
-    simpleunmark-deepinfra-api-key = var.deepinfra_api_key
-    simpleunmark-shared-secret     = var.confidential_shared_secret
-    block-project-ssh-keys         = "true"
-    enable-oslogin                 = "TRUE"
-    serial-port-enable             = "false"
+    tee-image-reference                   = var.image_reference
+    tee-restart-policy                    = "Always"
+    tee-container-log-redirect            = "false"
+    tee-mount                             = "type=tmpfs,source=tmpfs,destination=/tmp/simpleunmark,size=1073741824"
+    simpleunmark-deepinfra-secret-version = "${data.google_secret_manager_secret.workload["simpleunmark-deepinfra-api-key"].id}/versions/${var.deepinfra_secret_version}"
+    simpleunmark-shared-secret-version    = "${data.google_secret_manager_secret.workload["simpleunmark-confidential-shared-secret"].id}/versions/${var.shared_secret_version}"
+    block-project-ssh-keys                = "true"
+    enable-oslogin                        = "TRUE"
+    serial-port-enable                    = "false"
   }
 
   lifecycle {
@@ -160,6 +179,7 @@ resource "google_compute_instance" "workload" {
     google_compute_router_nat.workload,
     google_artifact_registry_repository_iam_member.artifact_reader,
     google_project_iam_member.confidential_workload_user,
+    google_secret_manager_secret_iam_member.workload_reader,
   ]
 }
 
@@ -227,18 +247,6 @@ resource "google_compute_backend_service" "workload" {
 
 resource "google_compute_global_address" "workload" {
   name = "${var.name}-ip"
-}
-
-resource "cloudflare_dns_record" "workload" {
-  zone_id = var.cloudflare_zone_id
-  name    = var.domain_name
-  type    = "A"
-  content = google_compute_global_address.workload.address
-  ttl     = 300
-  # Direct GCP HTTPS endpoint: certificate validation and long media requests
-  # must not depend on Cloudflare's proxy timeout or upload limits.
-  proxied = false
-  comment = "Simple Unmark confidential service; managed by Terraform"
 }
 
 resource "google_compute_managed_ssl_certificate" "workload" {

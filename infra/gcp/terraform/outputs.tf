@@ -1,5 +1,5 @@
 output "public_ip" {
-  description = "Load balancer address published by the Terraform-managed Cloudflare A record."
+  description = "Load balancer IPv4 address. Manually point the workload hostname's DNS-only A record here."
   value       = google_compute_global_address.workload.address
 }
 

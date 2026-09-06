@@ -29,14 +29,18 @@
 
 ## Infrastructure and integration
 
-1. Apply foundation first only if it has not already been applied. For an
-   existing deployment, retain the exact backend bucket and state prefixes.
-2. Fill in the runtime's ignored `terraform.tfvars`: image digest, Cloudflare
-   zone ID, DeepInfra key, and shared capability/receipt HMAC key. Supply a
-   zone-scoped `CLOUDFLARE_API_TOKEN` locally, not in GitHub release CI.
+1. Review/apply foundation changes first: APIs, registries, and Secret Manager
+   containers. Retain the exact backend bucket and state prefixes.
+2. Follow [Secret Manager setup](../infra/gcp/secret-manager-migration.md). Upload
+   the DeepInfra and shared HMAC values directly, outside Terraform. Set the NEW
+   image digest and numeric secret versions in checked-in `production.auto.tfvars`.
+   No private tfvars or DNS credentials are needed. Never deploy the previous
+   plaintext-metadata image with the new bootstrap configuration.
 3. From `infra/gcp/terraform`, run `terraform init`, `terraform plan`, and after
    review `terraform apply`. The operator runs these commands, not the assistant.
-4. Wait for HTTPS certificate and backend health. Verify `/healthz` and
+4. Run `terraform output` and manually point `confidential.simpleunmark.com`
+   to `public_ip` with a DNS-only A record. Wait for HTTPS certificate and
+   backend health. Verify `/healthz` and
    `/v1/info`. These can be tested independently but are not proofs of attestation.
 5. Configure the authorization/receipt backend with the same HMAC key and the
    workload URL. The production image fixes the receipt URL, CORS origin,

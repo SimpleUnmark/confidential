@@ -1,22 +1,25 @@
 # Terraform: Confidential Space v1
 
 Apply [`../foundation`](../foundation/README.md) first: it manages project API
-enablement and the private Artifact Registry repository. This stack reads that
-registry and prepares the CPU Confidential mode runtime without Secret
-Manager, Cloud KMS, STS, or a Confidential Space workload identity pool. It
-creates:
+enablement, private Artifact Registry repositories, and secret containers. This stack reads that
+registry and prepares the CPU Confidential mode runtime with Secret Manager,
+without customer-managed Cloud KMS, STS, or a Confidential Space workload identity
+pool. It creates:
 
 - a custom VPC and private subnet;
 - one private-IP N2D Confidential Space VM using SEV, Secure Boot, vTPM, and an
   immutable digest-pinned payload image;
 - a least-purpose workload service account with Confidential Computing workload
   and Artifact Registry read roles;
-- Cloud Router and Cloud NAT for Artifact Registry, DeepInfra, Google
-  attestation, and receipt callbacks;
+- secret-scoped Secret Manager access for the workload service account;
+- Cloud Router and Cloud NAT for outbound provider and receipt calls;
 - an external global HTTPS load balancer and Google-managed certificate;
 - a firewall rule that exposes port 8080 only to Google's load-balancer and
   health-check ranges.
-- a DNS-only Cloudflare A record in the existing simpleunmark.com zone.
+
+DNS is managed manually by the operator. No Cloudflare provider, zone ID, or
+API token is required. Terraform still creates the HTTPS certificate and
+load balancer, and outputs the IP to publish in DNS.
 
 The operator runs all commands that change cloud resources or Terraform state.
 The GCS backend is mandatory; the bucket is created once using the foundation
@@ -26,7 +29,9 @@ Terraform is pinned to `1.15.8` in `.terraform-version`; `required_version`
 enforces the same exact version even without a version manager. Provider
 versions are locked separately in `.terraform.lock.hcl`. The checked-in
 `backend.tf` selects the bucket and runtime prefix. `production.auto.tfvars`
-automatically loads the public project, Frankfurt region/zone, and hostname.
+automatically loads the public project, Belgium region/zone, and hostname.
+The state bucket remains in Frankfurt. For the existing registry cutover, follow
+[the Belgium migration](../belgium-migration.md) before applying this stack.
 
 The HTTPS load balancer terminates TLS outside the TEE. Confidential-mode text
 is already HPKE-encrypted in the browser and response events are encrypted to
@@ -34,40 +39,38 @@ the same browser context. Keep HTTPS because it still protects capabilities,
 attestation tokens, origins, and transport integrity. Private mode is sent over
 ordinary HTTPS from the web app to the same workload.
 
-## Important state and metadata warning
+## Credentials and state
 
-`deepinfra_api_key` and `confidential_shared_secret` are marked sensitive, but
-Terraform sensitivity only redacts ordinary CLI output. Their plaintext values
-are stored in Terraform state and ordinary GCE instance metadata. Use a
-restricted, encrypted remote state backend, never commit credentials in a
-`.tfvars` file, and
-limit principals that can read the state or Compute instance metadata. This is
-the explicit simplicity/security tradeoff of v1.
+Credential values never pass through Terraform. Foundation creates the two
+Secret Manager containers; the operator uploads their values directly. Runtime
+looks up container metadata only and grants the VM service account accessor
+roles on those two secrets. The Python service retrieves explicit numeric
+versions at startup. VM metadata contains **references**, not secret payloads.
 
-Anyone who obtains the DeepInfra key can use the provider account. Anyone who
-obtains the HMAC key can forge cleaning capabilities or accounting receipts.
-Neither key decrypts recorded Confidential-mode payloads because HPKE uses a
-request-scoped P-256 key generated inside the workload.
+All production inputs, including the image digest and secret version numbers,
+belong in the checked-in `production.auto.tfvars`. No private `terraform.tfvars`
+is needed. Still keep Terraform state and plans private. If the old configuration
+was applied with real secrets, old state/object versions may contain them: rotate
+those credentials and handle historical state separately.
+
+Follow [the Secret Manager runbook](../secret-manager-migration.md) before
+deploying. Secret access is service-account IAM based, not attestation-gated.
+Privileged administrators can still obtain credentials through IAM/identity
+control. Neither credential decrypts recorded HPKE payloads.
 
 ## Deployment order
 
 1. Apply the foundation, publish the workload image to its Artifact Registry
    repository, and copy its immutable `@sha256:...` reference. The runtime's
    image-pull role is scoped to this one repository.
-2. In `infra/gcp/terraform`, copy `terraform.tfvars.example` to the gitignored
-   `terraform.tfvars`, restrict its permissions (`chmod 600 terraform.tfvars`),
-   and fill in the image digest, zone ID, and credentials. Terraform loads this
-   file automatically. Generate the HMAC secret with `openssl rand -hex 32`
-   and use the same value as the web app's `CONFIDENTIAL_SHARED_SECRET`.
-   Keep secrets out of the checked-in `production.auto.tfvars`. That file takes
-   precedence over `terraform.tfvars`, so change public deployment settings
-   there rather than duplicating them in the private file.
-3. Set `cloudflare_zone_id` to the existing zone's ID and supply
-   `CLOUDFLARE_API_TOKEN` locally with DNS Read/Write permission scoped to that
-   zone. Do not commit the token or put it in backend configuration. If the
-   hostname already has a DNS record, import it into
-   `cloudflare_dns_record.workload` before applying; do not create a duplicate.
-   Initialize and review the plan:
+2. Follow [the Secret Manager runbook](../secret-manager-migration.md) to upload
+   both values, configure the website's matching HMAC key, and build a new
+   Secret Manager-capable image. The older plaintext-metadata image is incompatible.
+3. Set the approved new image digest and numeric secret versions in
+   `production.auto.tfvars`. Its placeholder deliberately fails validation
+   until a new release is chosen. Remove obsolete credential assignments from
+   any old private tfvars yourself; never copy them into the public file.
+   Initialize and review:
 
    ```bash
    cd infra/gcp/terraform
@@ -82,14 +85,17 @@ request-scoped P-256 key generated inside the workload.
    terraform apply
    ```
 
-5. Terraform creates the `A` record from `domain_name` to `public_ip`, with
-   Cloudflare proxying disabled. Google's managed certificate remains
-   provisioning until DNS resolves to that IP. Inspect backend health and
+5. Run `terraform output` and manually create/update the `A` record for
+   `confidential.simpleunmark.com` using `public_ip`. In Cloudflare, use name
+   `confidential`, DNS-only (grey cloud), and TTL Auto. This IPv4-only stack does
+   not need an AAAA record; check for conflicting existing records for this
+   hostname. Google's managed certificate remains provisioning until DNS
+   resolves correctly and validation completes. Inspect backend health and
    certificate status before proceeding.
 6. Build and deploy the web app with:
 
    - `CONFIDENTIAL_SERVER_PUBLIC_URL` from the Terraform output;
-   - `CONFIDENTIAL_SHARED_SECRET` matching the Terraform input;
+   - `CONFIDENTIAL_SHARED_SECRET` matching the selected Secret Manager version;
    - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_IMAGE_DIGESTS` from
      `expected_image_digest`;
    - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_GCP_PROJECT_NUMBERS` from
@@ -116,7 +122,7 @@ remove the old digest from a later web build.
   Python process. The browser's attestation and clean calls must reach that same
   instance. Do not add another backend until routing affinity or shared
   attestation state is designed and reviewed.
-- Changing `image_reference` forces replacement of the stateless VM. The
+- Changing `image_reference` or either secret version replaces the stateless VM. The
   default `deletion_protection = false` permits that safe rotation; enabling
   deletion protection intentionally blocks replacement until it is disabled.
 - The Distroless payload image fixes the production origin, receipt URL,

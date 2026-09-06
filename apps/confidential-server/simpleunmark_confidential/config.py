@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 DEFAULT_DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai"
@@ -25,10 +26,10 @@ def _http_url(name: str, value: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    shared_secret: str
+    shared_secret: str = field(repr=False)
     receipt_url: str
     allowed_origins: tuple[str, ...]
-    deepinfra_api_key: str
+    deepinfra_api_key: str = field(repr=False)
     deepinfra_base_url: str = DEFAULT_DEEPINFRA_BASE_URL
     deepinfra_model: str = DEFAULT_DEEPINFRA_MODEL
     attestation_audience: str = DEFAULT_ATTESTATION_AUDIENCE
@@ -43,8 +44,17 @@ class Settings:
     receipt_timeout_seconds: float = 8.0
 
     @classmethod
-    def from_env(cls) -> Settings:
-        secret = _required("CONFIDENTIAL_SHARED_SECRET")
+    def from_env(cls, *, credentials: Mapping[str, str] | None = None) -> Settings:
+        production = os.environ.get("REQUIRE_CLIENT_ATTESTATION") == "1"
+
+        def credential(name: str) -> str:
+            if credentials and name in credentials:
+                return credentials[name]
+            if production:
+                raise RuntimeError(f"{name} must be loaded from Secret Manager")
+            return _required(name)
+
+        secret = credential("CONFIDENTIAL_SHARED_SECRET")
         if len(secret.encode()) < 32:
             raise RuntimeError("CONFIDENTIAL_SHARED_SECRET must be at least 32 bytes")
 
@@ -62,7 +72,7 @@ class Settings:
             shared_secret=secret,
             receipt_url=_http_url("APP_RECEIPT_URL", _required("APP_RECEIPT_URL")),
             allowed_origins=origins,
-            deepinfra_api_key=_required("DEEPINFRA_API_KEY"),
+            deepinfra_api_key=credential("DEEPINFRA_API_KEY"),
             deepinfra_base_url=_http_url(
                 "DEEPINFRA_BASE_URL",
                 os.environ.get("DEEPINFRA_BASE_URL", DEFAULT_DEEPINFRA_BASE_URL),

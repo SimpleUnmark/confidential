@@ -9,7 +9,7 @@ apps/confidential-server/  Python FastAPI service and Distroless Dockerfile
 packages/client/          Framework-independent TypeScript verifier and HPKE client
 fixtures/                 Shared browser/Python deterministic-cleaning fixtures
 infra/gcp/foundation/     Terraform: APIs and private Artifact Registry repository
-infra/gcp/terraform/      Terraform: Confidential Space VM, networking, HTTPS, DNS
+infra/gcp/terraform/      Terraform: Confidential Space VM, networking, HTTPS
 docs/                     Integration, security, and release/deployment guides
 ```
 
@@ -29,9 +29,11 @@ Visible image/video overlay removal and confidential GPU inference are **not
 implemented**. Confidential AI is a planned mode, not a current security guarantee.
 
 The browser-delivered JavaScript and approved workload code remain trusted.
-The two runtime credentials are stored in ordinary VM metadata and Terraform
-state; infrastructure operators with access can read them. Those credentials do
-not decrypt HPKE payloads. See the [full threat boundary](apps/confidential-server/README.md#threat-boundary).
+The two runtime credentials are fetched directly from Secret Manager using the
+VM service account. Terraform and VM metadata contain version references only,
+not credential values. Secret access is IAM-based, not attestation-gated;
+sufficiently privileged administrators can still obtain these credentials.
+They do not decrypt HPKE payloads. See the [full threat boundary](apps/confidential-server/README.md#threat-boundary).
 
 ## Local development
 
@@ -84,8 +86,12 @@ credentials, or GCP credentials are needed in release CI.
 
 Both Terraform directories pin `1.15.8` and support plain `terraform init`,
 `terraform plan`, and `terraform apply` from inside the directory. Existing
-production uses Frankfurt (`europe-west3`). Operators review and execute all
-cloud changes themselves.
+production targets Belgium (`europe-west1`); the state bucket and retained
+rollback registry stay in Frankfurt. Follow the
+[Belgium migration](infra/gcp/belgium-migration.md) for the existing deployment.
+DNS is configured manually using
+the runtime's `public_ip` output. Operators review and execute all cloud changes
+themselves.
 
 For the initial repository split, read [migration notes](docs/repository-migration.md)
 before running Terraform or publishing a release.

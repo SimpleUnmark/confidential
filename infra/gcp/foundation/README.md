@@ -1,13 +1,25 @@
-# Foundation: APIs and image registry
+# Foundation: APIs, image registries, and secret containers
 
-This is the first Terraform apply. It enables four project APIs and creates the
-private Docker repository. It requires no workload image, DeepInfra key, DNS
-token, or VM. The separate runtime stack in `../terraform` is applied only after
+This is the first Terraform apply. It enables five project APIs and creates the
+private Docker repositories plus two Secret Manager containers (no secret values).
+It requires no workload image, DeepInfra key, DNS token, or VM.
+The separate runtime stack in `../terraform` is applied only after
 an image exists. Both use the same GCS state bucket with distinct prefixes.
 
 The operator runs all commands that change cloud resources or Terraform state.
-The project and state bucket are the only infrastructure bootstrap exceptions.
+The project and state bucket are infrastructure bootstrap exceptions; the
+operator also manages the workload's DNS record separately.
 Image builds and publication are release operations, not Terraform resources.
+
+## Existing Frankfurt deployment: migrate to Belgium
+
+Follow [the migration runbook](../belgium-migration.md). Production now targets
+Belgium (`europe-west1`) and retains the Frankfurt registry (`europe-west3`) for
+rollback. A `moved` block adopts the original registry address into a
+region-keyed resource without recreating it. Expect the Belgium registry (if not
+already created), Secret Manager API, and two secret containers to be added,
+zero deletions, and no VM. Do not import or manually move state for this
+already-managed registry. The bucket remains in Frankfurt.
 
 ## 1. Create the state bucket once
 
@@ -25,8 +37,9 @@ gcloud storage buckets update gs://simple-unmark-prod-tfstate --versioning
 ```
 
 Keep bucket access restricted to the deployment operators. The runtime state
-and saved runtime plans contain the two workload credentials. Public access
-prevention does not remove permissions already granted to project members.
+and saved plans must remain private. New configurations contain no credential
+payloads; historical state may contain them if the old runtime was applied.
+Public access prevention does not remove permissions already granted to project members.
 GCS encrypts stored objects and the Terraform backend supports state locking;
 versioning allows recovery of older state objects. Do not set a bucket retention
 lock: Terraform must be able to delete its temporary lock object.
@@ -39,7 +52,8 @@ versions are locked separately in `.terraform.lock.hcl`.
 
 The checked-in `backend.tf` selects the state bucket and foundation prefix.
 `production.auto.tfvars` automatically supplies the non-secret project and
-Frankfurt region settings. No backend or variable-file flags are needed.
+Belgium region settings plus the retained Frankfurt repository. No backend or
+variable-file flags are needed.
 
 From the repository root, enter this directory and run:
 
@@ -49,8 +63,13 @@ terraform init
 terraform plan
 ```
 
-Review the plan: four API enablement resources and one registry, no VM or load
-balancer. When satisfied, run `terraform apply`. It generates a fresh plan;
+On an empty state, review the plan: five API enablement resources, two secret
+containers, and the configured registries, no VM or load balancer.
+On the existing production state,
+expect the unapplied registry migration plus the Secret Manager API and two
+secret containers. If Belgium was already applied, expect only the three Secret
+Manager resources.
+When satisfied, run `terraform apply`. It generates a fresh plan;
 review that plan again before typing `yes` at the confirmation prompt:
 
 ```bash
@@ -63,8 +82,8 @@ before planning. Do not recreate or delete it:
 
 ```bash
 terraform import \
-  google_artifact_registry_repository.workload \
-  projects/simple-unmark-prod/locations/europe-west3/repositories/workloads
+  'google_artifact_registry_repository.workload["europe-west1"]' \
+  projects/simple-unmark-prod/locations/europe-west1/repositories/workloads
 ```
 
 Only run the import if the repository exists. Already-enabled APIs can be
@@ -72,13 +91,17 @@ adopted by the API resources during apply.
 
 ## 3. Publish, then deploy the runtime
 
-Publish the reviewed release image into the registry and record its digest.
+Follow [Secret Manager setup](../secret-manager-migration.md) to populate the two
+containers directly, outside Terraform. Secret replicas are located in Belgium
+with Google-managed encryption; no customer-managed KMS is required.
+Publish the reviewed Secret Manager-capable release image and record its digest.
 Build/push commands are run by the operator or release CI; Terraform does not
 build containers or store Docker credentials. Then follow `../terraform/README.md`.
 
 The runtime stack owns the service account, repository-scoped image-pull IAM,
-Confidential Space VM, networking, load balancer, certificate, and Cloudflare A
-record. It reads the registry created here. Apply the foundation first and keep
+Confidential Space VM, networking, load balancer, and certificate. The operator
+creates the DNS record from the runtime's public IP output. The runtime reads
+the registry created here. Apply the foundation first and keep
 both states separate. Never use routine `-target` applies to bypass this order.
 
 For an existing deployment using the old combined configuration, migrate the
