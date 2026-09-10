@@ -14,3 +14,12 @@ Default protections work for the existing solo owner: required PR/CI, no direct
 or force pushes, manual owner approval for publishing and for signing policies.
 This is not a two-person/multisig control. See the runbook before enabling
 `independent_review_required` and selecting additional release reviewer IDs.
+
+When updating the provider lockfile, record both CI and local platform hashes:
+
+```bash
+terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+```
+
+CI keeps `-lockfile=readonly`; do not disable checksum verification to work around
+a platform mismatch. This command updates only the local lockfile, not cloud state.
