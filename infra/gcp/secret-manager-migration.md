@@ -119,14 +119,16 @@ attestation/referrer artifacts into the destination repository.
 Edit `infra/gcp/terraform/production.auto.tfvars`:
 
 ```hcl
-image_reference         = "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential@sha256:NEW_DIGEST"
+# Image selection now lives in releases/approved-workloads.json.
 deepinfra_secret_version = "1" # use the actual uploaded version
 shared_secret_version   = "1" # use the actual uploaded version
 ```
 
 These are public configuration values and safe to commit. No private tfvars file
-is required. The checked-in image placeholder intentionally fails validation
-until the new release digest is supplied. The selected versions must be ENABLED.
+is required. Approve/select the image through the
+[release-security flow](../../docs/release-security.md), not a tfvars override.
+CI now publishes to both registries; the manual copy above is historical migration
+guidance, not the normal release path. The selected versions must be ENABLED.
 Terraform does not read their payloads or confirm credential validity at plan time.
 
 If you made an old private `terraform.tfvars`, remove obsolete credential

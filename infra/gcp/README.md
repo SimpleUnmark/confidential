@@ -29,44 +29,22 @@ The operator applies only after reviewing the plan. Production targets Belgium
 `europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential`.
 The existing Frankfurt registry is retained for rollback during cutover.
 
-## 2. Public release and verified image transfer
+## 2. Keyless CI publication and reviewed approval
 
-Configure **this public repository's** GitHub `production` environment:
+Follow [the release-security runbook](../../docs/release-security.md). After the
+foundation apply, enter `infra/github` and run plain `terraform init`,
+`terraform plan`, and `terraform apply` yourself. It configures GitHub publishing
+variables and protected environments. Keep the existing Docker Hub username/token.
 
-- Environment variable `DOCKERHUB_USERNAME=simpleunmark`
-- Environment secret `DOCKERHUB_TOKEN` with the required repository push access
+Run **Release confidential workload** from reviewed `main`. CI builds once and
+publishes identical single-platform image digests to Docker Hub and public-read
+Belgium Artifact Registry using GitHub OIDC federation. No GCP key or manual copy
+is needed. CI signs image/client provenance and an unapproved candidate manifest.
 
-Run **Release confidential workload** on reviewed source. It runs CI first,
-builds an AMD64 Distroless image, pushes it to Docker Hub, and attests both the
-image and browser client tarball. Download the manifest and approve its exact
-source commit, workflow identity, and image digest. Use a new tag for a new
-candidate. Prerelease semver tags do not publish `latest`; deployment always
-uses a digest, never a mutable tag.
-
-```bash
-gh attestation verify \
-  oci://docker.io/simpleunmark/simpleunmark-confidential@sha256:DIGEST \
-  --repo SimpleUnmark/confidential
-```
-
-Only after verification, the operator configures local registry authentication
-and copies the immutable manifest. These are release operations, not Terraform
-resource provisioning; no GCP key is stored in GitHub.
-
-```bash
-gcloud auth configure-docker europe-west1-docker.pkg.dev
-
-SOURCE_IMAGE=docker.io/simpleunmark/simpleunmark-confidential@sha256:DIGEST
-DESTINATION_IMAGE=europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential:release-COMMIT
-
-docker buildx imagetools create --prefer-index=false --tag "$DESTINATION_IMAGE" "$SOURCE_IMAGE"
-docker buildx imagetools inspect "$DESTINATION_IMAGE"
-```
-
-**Require the destination digest to equal the verified source digest.** Stop if
-they differ. Set the runtime image reference to the destination `@sha256:...`,
-not the temporary transfer tag. Verify provenance against the public source
-repository; a registry copy does not change that source identity.
+Approve exact digests through a `releases/approved-workloads.json` PR and the
+separate **Attest approved release policy** workflow. Run `pnpm release:verify`
+and export the signed policy with `pnpm release:export-web ../simpleunmark`.
+Publishing alone cannot select the VM image or expand the browser allowlist.
 
 ## 3. Runtime
 
@@ -77,7 +55,8 @@ runtime directory use plain `terraform init`,
 
 Follow [the Secret Manager guide](secret-manager-migration.md) before runtime
 deployment. Upload credential values directly to Secret Manager. Checked-in
-`production.auto.tfvars` holds the image digest and numeric secret version pins;
+`production.auto.tfvars` holds numeric secret version pins; image selection comes
+from `releases/approved-workloads.json`;
 no private tfvars, Cloudflare token, or zone ID is required. After apply, use `terraform output` to obtain `public_ip`, then
 manually point the `confidential.simpleunmark.com` A record at that IP with
 proxying disabled (DNS-only). Never publish credential files, state,
@@ -101,7 +80,7 @@ The private website is a separate deployment; this repository does not contain
 its Dockerfile, database, or payment implementation. Supply these public policy
 values from the approved release and Terraform outputs:
 
-- `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_IMAGE_DIGESTS`
+- the checked-in, verified release-policy snapshot (image digest allowlist)
 - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_GCP_PROJECT_NUMBERS`
 - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_SERVICE_ACCOUNTS`
 - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_HARDWARE_MODELS=GCP_AMD_SEV`

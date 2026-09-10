@@ -222,6 +222,7 @@ node_modules/
 .pnpm-store/
 .vendor/
 artifacts/
+gha-creds-*.json
 coverage/
 *.tsbuildinfo
 .DS_Store

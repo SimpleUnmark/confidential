@@ -32,16 +32,6 @@ variable "repository_id" {
   default     = "workloads"
 }
 
-variable "image_reference" {
-  description = "Artifact Registry OCI image pinned by digest, for example europe-west1-docker.pkg.dev/project/repo/image@sha256:..."
-  type        = string
-
-  validation {
-    condition     = can(regex("^[a-z0-9-]+-docker\\.pkg\\.dev/.+@sha256:[a-f0-9]{64}$", var.image_reference))
-    error_message = "image_reference must be an Artifact Registry reference pinned by a sha256 digest."
-  }
-}
-
 variable "deepinfra_secret_version" {
   description = "Numeric Secret Manager version ID; never the credential value."
   type        = string

@@ -8,8 +8,10 @@ The website, accounts, payments, and database live in a separate private reposit
 apps/confidential-server/  Python FastAPI service and Distroless Dockerfile
 packages/client/          Framework-independent TypeScript verifier and HPKE client
 fixtures/                 Shared browser/Python deterministic-cleaning fixtures
-infra/gcp/foundation/     Terraform: APIs and private Artifact Registry repository
+infra/gcp/foundation/     Terraform: APIs, public registry, GitHub publishing IAM
 infra/gcp/terraform/      Terraform: Confidential Space VM, networking, HTTPS
+infra/github/             Terraform: protected release environments and CI variables
+releases/                 Reviewed approved/revoked image policy
 docs/                     Integration, security, and release/deployment guides
 ```
 
@@ -80,11 +82,14 @@ MIT-licensed; bundled dependencies retain their respective licenses.
 
 Follow the [GCP deployment guide](infra/gcp/README.md) and
 [deployment checklist](docs/deployment-checklist.md). The public release workflow
-tests both components, publishes the image to Docker Hub, and attests the image
-and client tarball from **this repository**. No private checkout, website
-credentials, or GCP credentials are needed in release CI.
+tests both components, builds once and publishes identical digests to Docker Hub
+and public-read GCP Artifact Registry, and signs provenance for both images and
+the client tarball. GCP authentication uses short-lived GitHub OIDC federation,
+not a stored GCP key. No private checkout or website credentials are needed.
+Follow [release approval and rotation](docs/release-security.md); publication
+never automatically approves a digest or deploys it.
 
-Both Terraform directories pin `1.15.8` and support plain `terraform init`,
+All three Terraform directories pin `1.15.8` and support plain `terraform init`,
 `terraform plan`, and `terraform apply` from inside the directory. Existing
 production targets Belgium (`europe-west1`); the state bucket and retained
 rollback registry stay in Frankfurt. Follow the

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "repository": "SimpleUnmark/confidential",
+  "protocolVersion": 4,
+  "deploymentDigest": "sha256:d2470f946ea4856d30d6de9923112ea7da5a6110aedb8e9b526216e9fe9855b9",
+  "client": {
+    "sha256": "e4ca7c8bac3375bac64c25325d87b6b8bb9d44d066960c145d5758ec5f8fced3",
+    "sourceCommit": "5abe8b1f641af714287d064fdb086035a9ddbb79",
+    "sourceRef": "refs/heads/main"
+  },
+  "workloads": [
+    {
+      "digest": "sha256:d2470f946ea4856d30d6de9923112ea7da5a6110aedb8e9b526216e9fe9855b9",
+      "sourceCommit": "f0b516715ad9a92217aa8e7d677910a86de46e5c",
+      "sourceRef": "refs/heads/main",
+      "status": "active",
+      "approvedAt": "2026-09-10",
+      "provenanceImages": ["docker.io/simpleunmark/simpleunmark-confidential"],
+      "note": "Initial adoption of the already deployed, operator-approved image. Docker Hub provenance verified; the existing GCP copy predates automated publication."
+    }
+  ]
+}

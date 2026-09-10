@@ -5,35 +5,27 @@
 1. Review the Python workload, public client, launch policy, and dependency pins.
    Run `pnpm lint`, `pnpm typecheck`, and `pnpm test`. CI also builds the AMD64
    Distroless image and validates Terraform without backend access.
-2. Configure this public repository's `production` Docker Hub variable/secret
-   as described in [migration notes](repository-migration.md).
-3. Run the release workflow on reviewed source. Download `release-manifest.json`
-   and the client tarball from its artifact. Record the public commit and image
-   digest. CI success alone is not release attestation verification.
-4. Verify the exact Docker Hub image and client tarball:
-
-   ```bash
-   gh attestation verify \
-     oci://docker.io/simpleunmark/simpleunmark-confidential@sha256:DIGEST \
-     --repo SimpleUnmark/confidential
-   gh attestation verify simpleunmark-confidential-client-0.1.0.tgz \
-     --repo SimpleUnmark/confidential
-   ```
-
-   Inspect provenance for the expected commit and
-   `.github/workflows/release-confidential.yml`. Merely accepting any attestation
-   from the repository is not a substitute for approving a specific release.
-5. Compare the tarball's SHA-256 with `clientSha256` in the manifest. Copy the
-   OCI image to Artifact Registry without rebuilding and require the destination
-   digest to match. See the [GCP guide](../infra/gcp/README.md).
+2. Follow [release-security.md](release-security.md) to configure GCP publishing
+   and GitHub approval protections through Terraform (operator applies).
+3. Run **Release confidential workload** on reviewed main. CI builds once,
+   publishes identical digests to both registries and signs provenance. Download
+   the signed `release-candidate.json`, tarball and verification bundles.
+4. Verify candidate provenance against the expected workflow AND source/signer
+   commit. Review the code and both registry attestations; add the digest through
+   a policy PR. `pnpm release:verify` must pass. CI success is not human approval.
+5. Merge/sign the policy through **Attest approved release policy** and run
+   `pnpm release:export-web ../simpleunmark`. This verifies the policy signature,
+   image provenance and compatible vendored client hash/provenance before copying.
+   Deploy the website's overlapping allowlist before rotating an existing VM.
 
 ## Infrastructure and integration
 
 1. Review/apply foundation changes first: APIs, registries, and Secret Manager
    containers. Retain the exact backend bucket and state prefixes.
 2. Follow [Secret Manager setup](../infra/gcp/secret-manager-migration.md). Upload
-   the DeepInfra and shared HMAC values directly, outside Terraform. Set the NEW
-   image digest and numeric secret versions in checked-in `production.auto.tfvars`.
+   the DeepInfra and shared HMAC values directly, outside Terraform. Select the
+   active deployment digest in the reviewed release policy and numeric secret
+   versions in checked-in `production.auto.tfvars`.
    No private tfvars or DNS credentials are needed. Never deploy the previous
    plaintext-metadata image with the new bootstrap configuration.
 3. From `infra/gcp/terraform`, run `terraform init`, `terraform plan`, and after

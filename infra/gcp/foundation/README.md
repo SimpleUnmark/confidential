@@ -1,7 +1,14 @@
 # Foundation: APIs, image registries, and secret containers
 
-This is the first Terraform apply. It enables five project APIs and creates the
-private Docker repositories plus two Secret Manager containers (no secret values).
+This is the first Terraform apply. It enables required project APIs, manages
+Docker repositories and two Secret Manager containers (no secret values), and
+configures keyless GitHub publishing. The active Belgium workload repository has
+public read; the retained Frankfurt repository is unchanged.
+The operator-approved project-wide domain-sharing exception is managed in
+`public-registry-policy.tf`. It permits external IAM grants throughout
+`simple-unmark-prod`; only the Belgium registry is granted public read here.
+The organization and other projects are not modified. See the
+[policy permissions and propagation notes](../../../docs/release-security.md#1-gcp-foundation).
 It requires no workload image, DeepInfra key, DNS token, or VM.
 The separate runtime stack in `../terraform` is applied only after
 an image exists. Both use the same GCS state bucket with distinct prefixes.
@@ -63,12 +70,10 @@ terraform init
 terraform plan
 ```
 
-On an empty state, review the plan: five API enablement resources, two secret
-containers, and the configured registries, no VM or load balancer.
-On the existing production state,
-expect the unapplied registry migration plus the Secret Manager API and two
-secret containers. If Belgium was already applied, expect only the three Secret
-Manager resources.
+On existing production, expect publishing IAM, the federation pool/provider,
+the dedicated publisher service account, public registry read, and any missing
+identity APIs. No VM, repository, or secret replacement is intended. On a fresh
+project, the registries and secret containers are also created.
 When satisfied, run `terraform apply`. It generates a fresh plan;
 review that plan again before typing `yes` at the confirmation prompt:
 
@@ -89,7 +94,13 @@ terraform import \
 Only run the import if the repository exists. Already-enabled APIs can be
 adopted by the API resources during apply.
 
-## 3. Publish, then deploy the runtime
+## 3. Configure release governance, publish, then deploy
+
+Follow [the release-security runbook](../../../docs/release-security.md) and apply
+`infra/github` before merging/enabling the release workflows. It configures
+GitHub environment variables from this stack's outputs and protects publication
+and approval. CI publishes directly to GCP and Docker Hub without a GCP key.
+
 
 Follow [Secret Manager setup](../secret-manager-migration.md) to populate the two
 containers directly, outside Terraform. Secret replicas are located in Belgium

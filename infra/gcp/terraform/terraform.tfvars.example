@@ -1,6 +1,6 @@
 # Reference only: edit the checked-in production.auto.tfvars directly.
 # No private terraform.tfvars is needed. Never put secret values in Terraform.
 # production.auto.tfvars takes precedence over terraform.tfvars.
-image_reference = "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential@sha256:REPLACE_WITH_NEW_RELEASE_DIGEST"
+# Review releases/approved-workloads.json to change the deployment digest.
 deepinfra_secret_version = "1"
 shared_secret_version   = "1"
