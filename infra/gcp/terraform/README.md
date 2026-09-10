@@ -1,10 +1,10 @@
 # Terraform: Confidential Space v1
 
 Apply [`../foundation`](../foundation/README.md) first: it manages project API
-enablement, private Artifact Registry repositories, and secret containers. This stack reads that
+enablement, Artifact Registry repositories (Belgium public-read), and secret containers. This stack reads that
 registry and prepares the CPU Confidential mode runtime with Secret Manager,
-without customer-managed Cloud KMS, STS, or a Confidential Space workload identity
-pool. It creates:
+without customer-managed Cloud KMS or a Confidential Space runtime identity
+pool. The separate CI publishing federation uses STS; the workload does not. It creates:
 
 - a custom VPC and private subnet;
 - one private-IP N2D Confidential Space VM using SEV, Secure Boot, vTPM, and an
@@ -49,9 +49,10 @@ looks up container metadata only and grants the VM service account accessor
 roles on those two secrets. The Python service retrieves explicit numeric
 versions at startup. VM metadata contains **references**, not secret payloads.
 
-All production inputs, including the image digest and secret version numbers,
-belong in the checked-in `production.auto.tfvars`. No private `terraform.tfvars`
-is needed. Still keep Terraform state and plans private. If the old configuration
+Public infrastructure settings and secret version numbers belong in checked-in
+`production.auto.tfvars`. The image digest is derived from the reviewed
+`releases/approved-workloads.json` policy; there is no `image_reference` override.
+No private `terraform.tfvars` is needed. Still keep Terraform state and plans private. If the old configuration
 was applied with real secrets, old state/object versions may contain them: rotate
 those credentials and handle historical state separately.
 
@@ -62,17 +63,17 @@ control. Neither credential decrypts recorded HPKE payloads.
 
 ## Deployment order
 
-1. Apply the foundation, publish the workload image to its Artifact Registry
-   repository, and copy its immutable `@sha256:...` reference. The runtime's
-   image-pull role is scoped to this one repository.
+1. Follow [the release-security runbook](../../../docs/release-security.md): apply
+   foundation and GitHub governance, publish through CI, verify and approve the
+   release policy. The runtime's image-pull role is scoped to this one repository.
 2. Follow [the Secret Manager runbook](../secret-manager-migration.md) to upload
    both values, configure the website's matching HMAC key, and build a new
    Secret Manager-capable image. The older plaintext-metadata image is incompatible.
-3. Set the approved new image digest and numeric secret versions in
-   `production.auto.tfvars`. Its placeholder deliberately fails validation
-   until a new release is chosen. Remove obsolete credential assignments from
-   any old private tfvars yourself; never copy them into the public file.
-   Initialize and review:
+3. Select the active `deploymentDigest` in `releases/approved-workloads.json`
+   through the approval flow. Set numeric secret versions in `production.auto.tfvars`.
+   Export the signed policy and deploy a website accepting old + new digests
+   **before** rotating an existing VM. Remove obsolete credential assignments
+   from old private tfvars yourself. Initialize and review:
 
    ```bash
    cd infra/gcp/terraform
@@ -98,8 +99,8 @@ control. Neither credential decrypts recorded HPKE payloads.
 
    - `CONFIDENTIAL_SERVER_PUBLIC_URL` from the Terraform output;
    - `CONFIDENTIAL_SHARED_SECRET` matching the selected Secret Manager version;
-   - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_IMAGE_DIGESTS` from
-     `expected_image_digest`;
+   - the verified, checked-in release-policy snapshot exported from this repo
+     (the image allowlist no longer needs an environment variable);
    - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_GCP_PROJECT_NUMBERS` from
      `project_number`;
    - `NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_SERVICE_ACCOUNTS` from
@@ -175,7 +176,7 @@ and [Google's monitoring guide](https://docs.cloud.google.com/confidential-compu
   Python process. The browser's attestation and clean calls must reach that same
   instance. Do not add another backend until routing affinity or shared
   attestation state is designed and reviewed.
-- Changing `image_reference` or either secret version replaces the stateless VM. The
+- Changing the policy's `deploymentDigest` or either secret version replaces the stateless VM. The
   default `deletion_protection = false` permits that safe rotation; enabling
   deletion protection intentionally blocks replacement until it is disabled.
 - The Distroless payload image fixes the production origin, receipt URL,

@@ -1,4 +1,6 @@
 locals {
+  release_policy  = jsondecode(file("${path.module}/../../../releases/approved-workloads.json"))
+  image_reference = "${var.region}-docker.pkg.dev/${var.project_id}/${var.repository_id}/simpleunmark-confidential@${local.release_policy.deploymentDigest}"
   labels = merge({
     application  = "simpleunmark"
     component    = "confidential-workload"
@@ -12,7 +14,7 @@ locals {
 # image-digest or secret-version change instead of retaining stale code/keys.
 resource "terraform_data" "workload_image" {
   triggers_replace = [
-    var.image_reference,
+    local.image_reference,
     var.deepinfra_secret_version,
     var.shared_secret_version,
   ]
@@ -160,7 +162,7 @@ resource "google_compute_instance" "workload" {
   }
 
   metadata = {
-    tee-image-reference                   = var.image_reference
+    tee-image-reference                   = local.image_reference
     tee-restart-policy                    = "Always"
     tee-container-log-redirect            = "false"
     tee-mount                             = "type=tmpfs,source=tmpfs,destination=/tmp/simpleunmark,size=1073741824"
@@ -179,8 +181,17 @@ resource "google_compute_instance" "workload" {
       error_message = "zone must belong to region."
     }
     precondition {
-      condition     = startswith(var.image_reference, "${var.region}-docker.pkg.dev/${var.project_id}/${var.repository_id}/")
-      error_message = "The image must be in the registry managed by the foundation stack."
+      condition = try(
+        local.release_policy.schemaVersion == 1 &&
+        local.release_policy.repository == "SimpleUnmark/confidential" &&
+        local.release_policy.protocolVersion == 4 &&
+        can(regex("^sha256:[a-f0-9]{64}$", local.release_policy.deploymentDigest)) &&
+        length([for release in local.release_policy.workloads : release
+          if release.digest == local.release_policy.deploymentDigest && release.status == "active"
+        ]) == 1,
+        false
+      )
+      error_message = "The deployment digest must be active in the reviewed releases/approved-workloads.json policy."
     }
   }
 

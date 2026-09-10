@@ -19,8 +19,8 @@ output "project_number" {
 }
 
 output "expected_image_digest" {
-  description = "Include this digest in NEXT_PUBLIC_CONFIDENTIAL_EXPECTED_IMAGE_DIGESTS."
-  value       = regex("sha256:[a-f0-9]{64}$", var.image_reference)
+  description = "Deployment digest selected by releases/approved-workloads.json; export that policy to the website before rotating the VM."
+  value       = local.release_policy.deploymentDigest
 }
 
 data "google_project" "current" {

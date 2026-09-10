@@ -41,6 +41,10 @@ resource "google_project_service" "required" {
     "compute.googleapis.com",
     "confidentialcomputing.googleapis.com",
     "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "sts.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "orgpolicy.googleapis.com",
     "secretmanager.googleapis.com",
   ])
   project            = var.project_id

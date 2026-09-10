@@ -1,5 +1,10 @@
 # Frankfurt to Belgium: operator-run migration
 
+This is the historical regional migration runbook. For current image publication,
+approval and runtime selection use [release-security.md](../../docs/release-security.md):
+CI publishes directly to Belgium; the digest comes from the approved policy,
+not an `image_reference` tfvars assignment. Do not repeat an already completed migration.
+
 **Updated:** [Secret Manager setup](secret-manager-migration.md) now supersedes
 the old-image runtime instructions. The registry copy may finish, but deploying
 the VM requires a NEW Secret Manager-capable image and credential setup first.

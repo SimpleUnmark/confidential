@@ -7,7 +7,10 @@
     "server:setup": "pnpm --filter @simpleunmark/confidential-server vendor:sync && python3 -m venv apps/confidential-server/.venv && apps/confidential-server/.venv/bin/python -m pip install -r apps/confidential-server/requirements-dev.txt",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
+    "test": "node --test scripts/*.test.mjs && pnpm -r --if-present test",
+    "release:validate": "node scripts/release-policy.mjs validate",
+    "release:verify": "node scripts/release-policy.mjs verify",
+    "release:export-web": "node scripts/release-policy.mjs export-web",
     "client:pack": "cd packages/client && pnpm pack --pack-destination ../../artifacts"
   }
 }
