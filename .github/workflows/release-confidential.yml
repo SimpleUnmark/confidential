@@ -159,7 +159,7 @@ jobs:
           cp '${{ steps.attest-gcp.outputs.bundle-path }}' artifacts/provenance/gcp.sigstore.json
           cp '${{ steps.attest-client.outputs.bundle-path }}' artifacts/provenance/client.sigstore.json
           cp '${{ steps.attest-candidate.outputs.bundle-path }}' artifacts/provenance/candidate.sigstore.json
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: confidential-release-${{ github.sha }}-${{ github.run_attempt }}
           path: artifacts/
