@@ -114,7 +114,10 @@ data "google_compute_image" "confidential_space" {
 }
 
 resource "google_compute_instance" "workload" {
-  name                      = var.name
+  # A same-name replacement has the same self_link. GCP removes the deleted
+  # VM from its unmanaged group, but the provider then sees no membership diff.
+  # Couple the name to the image/secret generation so the group gets a new URL.
+  name                      = "${substr(var.name, 0, 50)}-${substr(terraform_data.workload_image.id, 0, 12)}"
   zone                      = var.zone
   machine_type              = var.machine_type
   min_cpu_platform          = "AMD Milan"

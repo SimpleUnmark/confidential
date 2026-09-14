@@ -1,3 +1,8 @@
+output "workload_instance_name" {
+  description = "Generation-specific VM name for read-only diagnostics."
+  value       = google_compute_instance.workload.name
+}
+
 output "public_ip" {
   description = "Load balancer IPv4 address. Manually point the workload hostname's DNS-only A record here."
   value       = google_compute_global_address.workload.address
