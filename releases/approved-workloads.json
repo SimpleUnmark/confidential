@@ -17,6 +17,18 @@
       "approvedAt": "2026-09-10",
       "provenanceImages": ["docker.io/simpleunmark/simpleunmark-confidential"],
       "note": "Initial adoption of the already deployed, operator-approved image. Docker Hub provenance verified; the existing GCP copy predates automated publication."
+    },
+    {
+      "digest": "sha256:b1260243b47123aeb8edcc61abefded3cd45e14aee6ca242b1fb8199e56ae080",
+      "sourceCommit": "71beaa309295907b6a907d302e0baed9aefa5ccc",
+      "sourceRef": "refs/heads/main",
+      "status": "active",
+      "approvedAt": "2026-09-14",
+      "provenanceImages": [
+        "docker.io/simpleunmark/simpleunmark-confidential",
+        "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
+      ],
+      "note": "Dual-registry release from Actions run 34539701797, attempt 1. Allow alongside the existing image before website rollout; deploymentDigest deliberately remains unchanged."
     }
   ]
 }
