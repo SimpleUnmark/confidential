@@ -12,7 +12,7 @@ infra/gcp/foundation/     Terraform: APIs, public registry, GitHub publishing IA
 infra/gcp/terraform/      Terraform: Confidential Space VM, networking, HTTPS
 infra/github/             Terraform: protected release environments and CI variables
 releases/                 Reviewed approved/revoked image policy
-docs/                     Integration, security, and release/deployment guides
+docs/                     Architecture, security, and release/deployment guides
 ```
 
 ## What it protects
@@ -29,6 +29,10 @@ metadata cleaning stays inside the workload. An opt-in destructive audio operati
 changes tempo, pitch, EQ, and encoding; it does not guarantee watermark removal.
 Visible image/video overlay removal and confidential GPU inference are **not
 implemented**. Confidential AI is a planned mode, not a current security guarantee.
+
+The [confidential architecture](docs/architecture.md) documents the whole chain:
+request-time attestation and encryption, the release and approval gates, and
+where each safeguard is enforced.
 
 The browser-delivered JavaScript and approved workload code remain trusted.
 The two runtime credentials are fetched directly from Secret Manager using the
