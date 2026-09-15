@@ -11,11 +11,22 @@ each section links to the deeper reference rather than restating it.
 - Step-by-step rollout gates: [deployment-checklist.md](deployment-checklist.md)
 - Cloud topology: [infra/gcp](../infra/gcp/README.md), [runtime Terraform](../infra/gcp/terraform/README.md)
 
-Two claims frame everything below. In Confidential mode, submitted content is
-readable only inside an attested workload image that the browser checked before
-encrypting. And no single automated step promotes code to production: publishing,
-approving, exporting, and deploying are four separate, separately gated actions.
-Both claims have explicit limits, collected in [Limits](#limits-that-survive-the-whole-chain).
+Two claims frame everything below, and both are narrower than they first sound.
+
+**Confidentiality.** In Confidential mode the browser encrypts to a key that
+exists only inside an attested workload image, and it verifies that image before
+encrypting. For media that is the whole story: the file never leaves the enclave.
+For text it is not — the paraphrase step sends the text to DeepInfra in plaintext.
+Read [The confidentiality boundary](#the-confidentiality-boundary) before
+describing this mode to anyone.
+
+**Release control.** No single automated step promotes code to production:
+publishing, approving, exporting, and deploying are four separate, separately
+gated actions. They are four separate *steps*, not four separate *people* — see
+[Role separation today](#role-separation-today).
+
+Both claims have further limits, collected in
+[Limits](#limits-that-survive-the-whole-chain).
 
 ## Participants and trust domains
 
@@ -26,12 +37,113 @@ Both claims have explicit limits, collected in [Limits](#limits-that-survive-the
 | Confidential workload | Decrypts, cleans, re-encrypts | Plaintext, for the life of one request. |
 | Google Confidential Space | Measures the image, signs attestation tokens | Hardware/firmware root of trust. |
 | Secret Manager | Holds the DeepInfra key and shared HMAC key | Two runtime credentials. Neither decrypts HPKE payloads. |
-| DeepInfra | Rewrites text | Receives rewritten text in plaintext over HTTPS. Outside the HPKE boundary. |
+| DeepInfra | Rewrites text | The submitted text itself, in plaintext over HTTPS, after the local deterministic pass. Outside the HPKE boundary; protected by provider policy only. |
 | GitHub Actions | Builds, publishes, signs provenance | Build integrity. Cannot change what the browser accepts. |
-| Operator | Reviews, approves, applies | Everything. Deliberately the only path to production. |
+| Operator | Reviews, approves, applies | Everything. Deliberately the only path to production — and today one person filling all four roles. |
 
 The shared HMAC secret is the only thing the website and workload share. It
 authorizes and accounts; it never participates in content encryption.
+
+## The confidentiality boundary
+
+The HPKE boundary is not the same shape for text and for media, and that
+difference is the most important thing to understand about this system.
+
+**Media never leaves the enclave.** `media.py` makes no outbound content call at
+all. The file is decrypted in memory, cleaned inside a per-request temporary
+directory, re-encrypted, and the directory is deleted before the response is
+returned. Only metadata receipts leave the VM.
+
+**Text does leave the enclave.** The text pipeline has two stages
+(`_processing_stream` in `app.py`):
+
+1. A deterministic local pass (`clean_deterministically`) that normalizes exotic
+   spaces and removes unsupported invisible carriers. This runs entirely inside
+   the enclave and changes almost nothing a reader would notice.
+2. One DeepInfra paraphrase, which receives the *output of stage 1* — the user's
+   submitted text, minus invisible characters, with spaces normalized. Nothing is
+   redacted, truncated, summarized, chunked, or otherwise reduced first.
+
+For any practical purpose, therefore: **DeepInfra receives the source text.** It
+travels over DeepInfra's ordinary authenticated HTTPS chat-completions API
+(`provider.py`) — TLS to `api.deepinfra.com`, a bearer API key loaded from Secret
+Manager, and the text as the `user` message of a streaming request, with the
+rewrite instructions as the `system` message. It is TLS in transit and plaintext
+at the application layer: DeepInfra's servers see it in the clear, because they
+have to in order to run the model on it.
+
+HPKE does not extend across this hop. The attestation the browser verified says
+nothing about it. No key the browser checked protects it. A user who trusts
+everything up to and including the enclave must still trust DeepInfra separately
+for the rewriting of text.
+
+### What DeepInfra commits to
+
+These are DeepInfra's own published statements, quoted so the difference between
+them and the rest of this document stays visible.
+
+From its [data-privacy documentation](https://docs.deepinfra.com/account/data-privacy):
+
+- "Input data is not stored to disk during inference — it exists only in memory
+  while the request is being processed." When inference completes "the data is
+  deleted from memory", and outputs are "sent to you and then deleted."
+- "We generally do not log the content of your requests. We log metadata useful
+  for debugging: request ID, cost, sampling parameters."
+- **The retention exception, stated in the same document:** "We reserve the right
+  to log a small portion of requests when necessary for debugging or security
+  purposes." Note what this is: an unannounced sample of request *content*, of
+  unspecified size, at DeepInfra's discretion. The documentation describes no
+  notice, no opt-out for the standard API, and no signal in the response. Neither
+  this workload nor the browser can tell whether a given clean was sampled.
+- A second exception covers bulk inference APIs, where data "may need to be
+  stored for a longer period, potentially on disk in encrypted form" and is
+  deleted "after a short retention period". This stack does not use those APIs —
+  `provider.py` calls the streaming `/chat/completions` endpoint — so it does not
+  apply today. It would apply if the call shape ever changed, which is a reason
+  to treat the provider call shape as a security-relevant decision.
+
+From its [privacy policy](https://deepinfra.com/privacy): "We will not store,
+sell, or train using this data unless we have your explicit consent." Account
+data is removed 30 days after account deletion, with the usual carve-outs for
+legal process, billing, and collection.
+
+### Provider policy is not cryptographic protection
+
+Everything in the section above is a **provider policy commitment**. It is
+enforced by DeepInfra's own operational practice and terms, and it carries its
+own stated exceptions. That is a categorically different kind of claim from the
+rest of this chain:
+
+| | Enforced by | Verifiable by the browser | How it fails |
+| --- | --- | --- | --- |
+| Enclave confidentiality | AMD SEV, Confidential Space measurement, HPKE | Yes — every request, before any plaintext is encrypted | Closed. The browser refuses to encrypt and the user sees an error |
+| DeepInfra confidentiality | Provider policy and contract | No | Silently. Nothing observable changes at any layer |
+
+A misconfiguration, an insider, a breach, a legal demand, or a routine debug
+sample at DeepInfra is not something the attestation chain detects, prevents, or
+even notices. So Confidential mode should never be described to a user as "your
+text is never readable outside the enclave". The accurate statement is narrower:
+the text is readable by DeepInfra, under DeepInfra's published policy, for the
+duration of the rewrite, and by nobody else outside the enclave.
+
+### Confidential GPU inference: planned, deferred for cost
+
+The intended end state is self-hosted inference on an attested confidential GPU —
+an H100/Blackwell-class device in confidential-compute mode, with the model
+weights and the paraphrase running inside the same measured boundary the browser
+already verifies, and the GPU's own attestation folded into the evidence the
+browser checks. That would move the text hop from a provider policy commitment to
+the same cryptographic and hardware-rooted guarantee as the rest of the request,
+and it would delete this entire section.
+
+It is deferred because of cost, not because of design or feasibility. Serverless
+per-token inference is paid only when someone actually cleans text; a dedicated
+confidential GPU instance is paid continuously whether or not anyone does, and it
+also requires hosting, updating and securing the model. At current volume that
+standing cost is larger than the product supports. This is a deliberate and
+revisitable trade-off, and it is precisely why Confidential AI is described
+throughout this repository as a planned mode rather than a shipped guarantee.
+Until it ships, the text boundary is exactly where this section puts it.
 
 ## Cleaning a request
 
@@ -93,25 +205,106 @@ stay a single instance — see the backend comment in
 
 ### 3. Browser-side verification
 
-`verifyConfidentialSpaceToken` in
-`packages/client/src/confidential-attestation.ts` verifies the JWT's RS256
-signature against Google's published JWKS, with issuer
-`https://confidentialcomputing.googleapis.com` and the configured audience. Then
-`validateConfidentialSpaceClaims` checks, against a policy supplied by trusted
-application configuration and never learned from the workload:
+This is the step the whole Confidential claim rests on, so it is worth stating
+precisely. At this point the browser holds the plaintext, the challenge it
+generated, and a public key the workload *claims* is its own. It releases none of
+them until every check below has passed.
 
-- `swname = CONFIDENTIAL_SPACE`, `dbgstat = disabled-since-boot`, `secboot = true`
-- `support_attributes` includes `STABLE` (production image, not debug)
-- `monitoring_enabled.memory = false`
-- hardware model, GCP project number, and service account all on the allowlist
-- `container.image_digest` in the approved digest set
-- the `eat_nonce` matches the binding computed in step 2
-- no command or environment override (absent or empty accepted; null, malformed,
-  or non-empty rejected — see the client README for why absence is accepted)
+**Signature.** `verifyConfidentialSpaceToken` in
+`packages/client/src/confidential-attestation.ts` verifies the token as an RS256
+JWT against Google's published JWKS for
+`signer@confidentialspace-sign.iam.gserviceaccount.com`, requiring issuer
+`https://confidentialcomputing.googleapis.com` and the audience from policy. The
+JWKS URL and the issuer are constants in the client source. An unsigned,
+wrongly-signed, wrong-issuer, or wrong-audience token fails here, before a single
+claim is read.
 
-An empty allowlist fails closed. `validateConfidentialSpaceClaims` alone is for
-tests; production must verify the signature. Only after all of this does any
-plaintext get encrypted.
+**Where the policy comes from.** The claim checks run against a
+`ConfidentialPolicy` — approved image digests, GCP project numbers, service
+accounts, hardware models, and the audience — supplied by the embedding
+application as build-time configuration. The website embeds the exported
+`releases/approved-workloads.json` allowlist when it builds; the browser never
+fetches it at runtime and never learns any part of it from the workload.
+`/v1/info` is informational and is not consulted. Any policy field that parses to
+an empty set raises `ConfidentialPolicyConfigurationError` instead of defaulting
+to permissive, so an unconfigured or mis-parsed policy fails closed rather than
+accepting everything.
+
+**Required security claims** (`validateConfidentialSpaceClaims`), every one
+mandatory:
+
+- `swname = CONFIDENTIAL_SPACE` — genuinely Confidential Space, not another TEE
+  flavour or a plain VM
+- `dbgstat = disabled-since-boot` — no debug access at any point since boot
+- `secboot = true` — Secure Boot attested
+- `submods.confidential_space.support_attributes` contains `STABLE` — the
+  production Confidential Space image, not a debug image
+- `submods.confidential_space.monitoring_enabled.memory = false` — workload
+  memory monitoring off, so enclave memory contents are not exported to Cloud
+  Monitoring
+- `hwmodel` in the approved hardware-model set
+- `submods.gce.project_number` in the approved project set
+- `google_service_accounts` intersects the approved service-account set
+- `submods.container.cmd_override` and `env_override` — absent or empty only. A
+  null, malformed, or non-empty value is rejected. Absence is accepted because
+  Google omits these claims entirely when no override event occurred; the client
+  README records the production image this was observed on.
+
+**Approved image digest.** `submods.container.image_digest` must be a
+`sha256:`-prefixed digest present in the policy's approved set. This is the check
+that ties the code actually running to the code an operator reviewed: an image
+built from different source, or one since revoked, has a different digest and is
+refused here even when the token is genuinely Google-signed and every other claim
+is perfect.
+
+**Challenge / request / key binding.** The browser recomputes
+
+```
+SHA-256("simpleunmark-attestation-v2\n" + requestId + "\n" + challenge + "\n" + publicKey)
+```
+
+locally (`attestationBinding` in `confidential-crypto.ts`) from *its own*
+challenge, *its own* request ID, and the public key just returned, and requires
+the result to appear in the token's `eat_nonce` (accepted as either a string or
+an array, both being valid encodings). This binding is what makes the token
+non-replayable and non-relayable: a stale token fails because the challenge
+differs, and a proxy holding a genuine token for the real workload cannot
+substitute an encryption key of its own, because the key is inside the hash the
+token commits to.
+
+**Encryption happens only after all of the above succeeds.** Verification is not
+advisory and is not raced against the upload; the plaintext is passed to
+`confidential-crypto.ts` only on the success path. `validateConfidentialSpaceClaims`
+is exported separately for tests and performs no signature verification at all;
+production paths call `verifyConfidentialSpaceToken`.
+
+The browser is not the only thing validating. Two further surfaces matter, and
+both live in the workload:
+
+- **Capability validation** (`security.py`). Before anything else happens, the
+  workload verifies the capability's HMAC with `compare_digest`, then enforces
+  `aud = simpleunmark-confidential-server`, a known version, `iat` not in the
+  future beyond 30 s of skew, an unexpired `exp`, a lifetime of at most ten
+  minutes, the declared mode against the endpoint, and the asset-kind invariants:
+  text capabilities may carry no file metadata at all, and media capabilities
+  must be v2 Confidential with a lowercase alphanumeric extension, a printable
+  MIME type, an operation, and zero text measurements. `AUDIO_PURIFY` is refused
+  on anything but audio.
+- **Measurement checks** (`_validated_text`, and the media comparison in
+  `clean_encrypted_media`). The decrypted content must match the capability
+  exactly — word, character and byte counts for text; asset kind, extension, MIME
+  type, operation and byte count for media. A mismatch is a `403`, never a
+  silent re-price. Because the browser computed those numbers and the website
+  signed them, this is what stops a larger file or a different operation being
+  substituted under an authorization issued for something cheaper.
+
+Accounting then rides on **metadata-only receipts**: `_receipt_base` and
+`_telemetry` in `app.py` construct the entire body, and it contains counts, mode,
+asset kind, operation, status, request ID, and token/cost/timing telemetry. No
+input, no output, no prompt, no filename, no removed metadata value, no content
+fragment. The website bills from measurements it already signed, so it never
+needs to see what was cleaned — see [§7](#7-encrypted-response-and-accounting)
+for what that path does and does not guarantee.
 
 ### 4. Encrypted request
 
@@ -133,7 +326,8 @@ response:   SUMR1 || uint32(header length) || JSON result || file bytes
 
 ### 5. Workload-side checks, in order
 
-Every guard runs before any cost is incurred:
+Every guard runs before any billable cost is incurred. Memory and CPU are a
+different question — see the note after the list.
 
 1. Capability signature, expiry, mode, and asset kind.
 2. Origin header against the capability and the allowlist.
@@ -148,11 +342,25 @@ Every guard runs before any cost is incurred:
 7. Measurements must match the capability exactly: word, character, and byte
    counts for text; asset kind, extension, MIME type, operation, and byte count
    for media. A mismatch is `403`, not a silent reprice.
-8. Media only: if a job is already running, `429 BUSY` — rejected rather than
-   queued in enclave RAM, and rejected *before* the reservation is claimed, so
-   the browser can abandon and retry at no cost.
+8. Media only: if a cleaning job is already running, `429 BUSY`, returned
+   *before* the reservation is claimed, so the browser can abandon and retry at
+   no cost.
 9. The signed, metadata-only `started` receipt atomically claims the reservation.
    Only then is the attestation entry dropped and the ephemeral key released.
+
+**What the single-job lock does and does not bound.** `media_processing_lock`
+serializes *cleaning*: at most one FFmpeg or image job runs at a time, so
+simultaneous transcodes cannot exhaust the two vCPUs or the enclave's memory. It
+does not bound upload memory. The busy check is step 8, and by the time it runs
+the request body has already
+been read fully into memory (`_read_encrypted_media_input`, up to
+`max_media_bytes` plus a 4 KiB envelope allowance — currently 50 MiB), copied
+once from the streaming `bytearray` into `bytes`, and HPKE-decrypted into a third
+plaintext buffer. Concurrent uploads therefore each hold their own buffers in
+enclave RAM and are rejected only after that cost has been paid. What limits how
+many can be in flight at once is the load balancer, the ASGI server, and the VM's
+memory — not this lock. The same is true of concurrent text requests, at the much
+smaller `max_body_bytes` scale of 400 KB each.
 
 ### 6. Processing
 
@@ -161,7 +369,10 @@ deterministic pass in conservative mode — normalizing exotic spaces and removi
 unsupported invisible carriers while preserving load-bearing emoji glue, script
 joiners, variation selectors, subdivision flags, and bidi controls — then one
 DeepInfra paraphrase. **The paraphrase leaves the confidential boundary:**
-DeepInfra receives and returns plaintext over its normal authenticated HTTPS API.
+DeepInfra receives the deterministically cleaned source text, and returns the
+rewrite, in plaintext over its normal authenticated HTTPS API. See
+[The confidentiality boundary](#the-confidentiality-boundary) for what protects
+it there and what does not.
 
 Media (`media.py`) routes to the upstream image or A/V metadata cleaner inside a
 per-request temporary directory that is deleted before the response is returned.
@@ -182,15 +393,64 @@ is AES-GCM encrypted with a sequence-derived nonce and AAD
 duplicated, replayed, or cross-request events fail authentication rather than
 being tolerated. Media returns one encrypted payload at sequence 0.
 
-In parallel, the workload posts HMAC-signed receipts to the website:
-`started`, then `succeeded` or `failed` with an error code. A receipt carries
-counts, mode, asset kind, operation, status, request ID, and token/cost/timing
-telemetry — no input, output, prompt, filename, removed metadata value, or
-content fragment (`_receipt_base` and `_telemetry` in `app.py`). Failure and
-client-abort paths submit a `failed` receipt so credits are returned; the abort
-path shields that submission through cancellation. A failed rewrite where the
-deterministic pass did change something still returns the deterministic result,
-with a warning and zero credits charged.
+In parallel, the workload posts HMAC-signed receipts to the website: `started`
+when the reservation is claimed, then `succeeded` or `failed` with an error code.
+A receipt carries counts, mode, asset kind, operation, status, request ID, and
+token/cost/timing telemetry — no input, output, prompt, filename, removed
+metadata value, or content fragment (`_receipt_base` and `_telemetry` in
+`app.py`). That body is the complete accounting record; nothing else crosses back
+to the website.
+
+**Terminal receipt delivery is best-effort, and this is where the accounting
+guarantees stop.** `ReceiptClient.submit` retries up to three times with backoff
+and gives up immediately on `400`, `401`, `403`, or `409`; an exhausted or
+refused submission raises `ReceiptError`. The `started` receipt is the clean
+case: it is sent with `attempts=1`, and a failure there aborts the request with
+`409` before anything is spent. The terminal receipts behave differently:
+
+- Media path: a `failed` receipt that cannot be delivered is swallowed
+  (`except ReceiptError: pass`), and the browser is still told "Reserved credits
+  were returned."
+- Text path: a `failed` receipt that cannot be delivered after a processing error
+  leaves `balances = None`, and the browser is still told "Any reserved credits
+  will be returned."
+- Client-abort path: the `failed` receipt is shielded against cancellation, but a
+  `ReceiptError` there is likewise swallowed.
+- Success path: if the `succeeded` receipt cannot be delivered, the request is
+  converted into a failure — the cleaned text or file is discarded, a
+  `PROCESSING_FAILED` receipt is attempted in its place, and the user sees an
+  error for work that actually completed.
+
+So a `started` receipt can be recorded with no terminal receipt ever following
+it. The same happens with no code path involved at all if the process stops
+between the two: an OOM kill, an unhandled crash, or the wholesale instance
+replacement that every image or secret change performs. Receipt state is
+process-local and is journaled nowhere, so a restarted workload has no knowledge
+of in-flight requests and will never retry them.
+
+**The website must therefore reconcile reservations that have a `started` receipt
+and no terminal receipt** — by timeout, by periodic sweep, or both. The workload
+cannot do it. Read every refund statement in this document accordingly: each
+failure path *attempts* a refund, and a claimed reservation whose terminal
+receipt never arrived stays claimed until the website resolves it.
+
+**A rewrite failure does not always return the deterministic result.** When the
+provider yields no billable text, the workload submits a `REWRITE_FAILED` receipt
+and then hands back the deterministic output with a warning and zero credits
+charged — but only when both conditions hold:
+
+1. The deterministic pass actually changed something (`removed` or
+   `normalized_spaces` non-zero). If it changed nothing there is nothing useful
+   to return, and the browser gets an error event instead.
+2. That `REWRITE_FAILED` receipt was accepted. Its submission is not wrapped in
+   its own `try`, so a `ReceiptError` propagates to the generic handler, which
+   emits a `PROCESSING_FAILED` receipt and an error event — discarding the
+   deterministic text the workload had already computed.
+
+A provider stream that fails *after* output has begun takes that same generic
+path, and a client abort returns nothing at all. In each of these cases any
+`delta` events already streamed to the browser are superseded by the terminal
+event rather than completed.
 
 ### 8. Private mode
 
@@ -268,9 +528,9 @@ deleted, historical evidence be rewritten, or a revoked image be reactivated.
 **4. Attested approval.** Merging to main triggers *Attest approved release
 policy*, which waits in the separate `release-approval` environment, re-runs
 verification, and signs the exact policy file. This is an auditable approval
-record. With a single maintainer it is not independent review or multisig, and
-the repo says so; `independent_review_required` exists for when a second
-maintainer is added.
+record: a distinct, timestamped, attributable action that cannot happen as a side
+effect of the merge. It is not independent review — see
+[Role separation today](#role-separation-today).
 
 **5. Export to the browser.** `pnpm release:export-web ../simpleunmark` fails
 closed unless the policy is committed, carries its approval attestation at that
@@ -296,6 +556,62 @@ same-name replacement failed. This is a single stateless VM: expect a brief
 outage. Afterwards mark the old digest `retiring`, then `revoked` with a reason,
 keeping the entry as an audit tombstone.
 
+## Role separation today
+
+The release chain has four gates. It does not have four people.
+
+| Gate | Mechanism | Who performs it today |
+| --- | --- | --- |
+| Implementation | Commits and PRs against `main` | The single maintainer |
+| Review | PR review of code, dependencies and provenance | The same person |
+| Approval | `release-approval` environment job signing the policy file | The same person |
+| Deployment | `terraform plan` / `apply` from a workstation | The same person |
+
+`infra/github/main.tf` makes this explicit rather than leaving it implied. While
+`independent_review_required` is `false` — its default and the current setting —
+`required_approving_review_count` is `0`, `require_last_push_approval` is off,
+and `prevent_self_review` is off for both the `production` and `release-approval`
+environments. The repository owner is the only account with write access. The
+same person therefore writes the code, approves the PR, clicks approve on the
+environment job, and runs `apply`.
+
+**Separate workflow gates do not constitute independent review.** What the four
+gates actually buy is sequencing and evidence. Each step is a distinct,
+attributable, timestamped action that cannot occur implicitly as a side effect of
+the previous one, and the approval attestation signs the exact policy file so the
+record cannot be rewritten afterwards. That is genuinely valuable, and it defeats
+a broad class of accidents: a stray tag publishing to production, `latest`
+drifting under a running VM, an unreviewed digest reaching a browser, a
+deployment of something nobody chose. It is not a second pair of eyes. A mistake
+or a deliberate act by the maintainer passes every gate, because the maintainer
+*is* every gate — and an attacker who compromises that one account compromises
+the entire chain in a single step. Treat every "separately gated" statement in
+this document as a claim about steps, not about people.
+
+**The roles are designed to be split, and splitting them is configuration, not
+redesign.** Adding a second maintainer with write access and setting
+`independent_review_required = true` in a local `*.auto.tfvars` raises
+`required_approving_review_count` to `1`, enables `require_last_push_approval`,
+and turns on `prevent_self_review` for both environments. At that point the
+person who wrote a change can no longer approve its PR, and the person who merged
+it can no longer approve its release job. Deployment can be separated further by
+giving the runtime Terraform credentials to an operator other than the one
+holding repository write access. The flag is deliberately not enabled while solo,
+because it would block the only maintainer from releasing at all. None of this
+defends against a repository or cloud administrator who changes the protections
+themselves.
+
+**Splitting the roles does not change what the browser trusts.** Even with
+independent review in place, the website still serves the JavaScript that
+performs the verification described in
+[step 3](#3-browser-side-verification). A compromised or coerced website can ship
+client code that skips the attestation check entirely, or that exfiltrates
+plaintext before encrypting it, and no amount of separation in the release chain
+detects that. Role separation raises the bar for shipping a bad *workload image*;
+it does nothing about delivery of the *client*. That limit is unchanged, and it
+remains the reason an independently distributed, pinned client is the strongest
+available follow-up.
+
 ## Where each safeguard lives
 
 | Safeguard | Enforced in | Stops |
@@ -309,14 +625,15 @@ keeping the entry as an audit tombstone.
 | Sequenced AEAD responses | Both sides | Replay, reordering, duplication, cross-request splicing |
 | `428` without attestation; 5-attempt cap | `app.py` | Cleaning without a handshake; decryption retry abuse |
 | Metadata-only receipts | `_receipt_base` / `_telemetry` | Content reaching the database, logs, or notifications |
-| Reservation claimed before spend; `429` before claim | `app.py` | Double-spend and charging for rejected work |
+| Reservation claimed before spend; `429` before claim | `app.py` | Double-spend and charging for rejected work. Terminal receipts are best-effort — see [§7](#7-encrypted-response-and-accounting) |
+| Single-job media lock | `media_processing_lock` | Concurrent transcodes exhausting enclave CPU and memory. **Not** upload buffering |
 | Baked-in production config | Dockerfile `ENV` | Silent endpoint/model/audience changes without a new digest |
 | Launch policy + attested override claims | Image labels *and* browser | Command/env override, log redirect, memory monitoring |
 | In-memory, CRC-checked secret bootstrap | `bootstrap.py` | Credentials on disk, in env, or inherited by FFmpeg |
 | Dual-registry digest equality, single-platform check | Release workflow | Registry divergence; an index instead of a measured manifest |
 | Pinned provenance verification | `release-policy.mjs` | Forged or foreign-built artifacts; self-hosted runners |
 | Transition rules | `validateTransition` | History deletion, evidence rewriting, un-revocation |
-| Separate approval environment | `approve-release-policy.yml` | Publication implying approval |
+| Separate approval environment | `approve-release-policy.yml` | Publication implying approval. Sequencing and evidence, not independent review |
 | Active-digest precondition | Runtime Terraform | Deploying an unapproved or revoked image |
 | Overlapping-allowlist rollout | Operator procedure | Locking out in-flight browsers during rotation |
 
@@ -330,9 +647,25 @@ carries the full list.
   website can exfiltrate text before encryption. Browser verification removes
   trust in the web backend's *attestation decision*, not in its code delivery. An
   independently distributed, pinned client is the stronger follow-up.
-- DeepInfra receives rewritten text in plaintext. There is no confidential GPU
-  inference in this stack, and Confidential AI is a planned mode, not a shipped
-  guarantee.
+- DeepInfra receives the submitted text in plaintext, after the deterministic
+  pass and over HTTPS. Its protections are provider policy — including an
+  explicit reservation to log a small sample of request content for debugging or
+  security — not cryptography, and the browser cannot verify any of them.
+  Self-hosted inference on an attested confidential GPU is planned and deferred
+  for cost, so Confidential AI is a planned mode, not a shipped guarantee. Full
+  detail in [The confidentiality boundary](#the-confidentiality-boundary).
+- Implementation, review, approval, and deployment are all performed by one
+  person today. The four gates give sequencing and an audit trail, not
+  independent review; the configuration to separate them exists and is off. See
+  [Role separation today](#role-separation-today).
+- Accounting is eventually consistent at best. A `started` receipt with no
+  terminal receipt — undelivered after retries, or lost to process termination —
+  leaves a reservation claimed that only the website can reconcile. Not every
+  failure results in a refund on its own, and not every rewrite failure returns
+  the deterministic result.
+- The single-job media lock bounds concurrent cleaning, not concurrent uploads.
+  Each in-flight upload holds its own ciphertext and plaintext buffers in enclave
+  memory before the busy check rejects it.
 - Secret Manager access is IAM-based. Sufficiently privileged administrators can
   obtain both runtime credentials.
 - Request counts, timing, ciphertext sizes, media category, operation, extension,
