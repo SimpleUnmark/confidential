@@ -122,6 +122,14 @@ with a local `roberta-large` masked-language model. The confidential service
 does not ship that multi-gigabyte model: it keeps the Distroless workload small
 and performs one DeepInfra paraphrase using the upstream v0.7 paraphrase tactic.
 
+Text rewriting has a 360-second total provider deadline shared across at most
+two attempts, including model reasoning and streaming. This leaves room for a
+retry after a slow first attempt while remaining below the GCP load balancer's
+420-second request limit and the website's ten-minute credit reservation.
+Expired provider operations still follow the failed-rewrite refund path. The
+deadline is baked into the workload image; changing it in production requires
+a new reviewed release and approved image deployment.
+
 ## Threat boundary
 
 In Confidential mode, the design keeps plaintext content out of the Next.js

@@ -40,7 +40,8 @@ class Settings:
     revision: str | None = None
     max_body_bytes: int = 400_000
     max_media_bytes: int = 50 * 1024 * 1024
-    provider_timeout_seconds: float = 90.0
+    # Shared deadline for both rewrite attempts, including model reasoning.
+    provider_timeout_seconds: float = 360.0
     receipt_timeout_seconds: float = 8.0
 
     @classmethod
