@@ -15,7 +15,9 @@
       "sourceRef": "refs/heads/main",
       "status": "active",
       "approvedAt": "2026-09-10",
-      "provenanceImages": ["docker.io/simpleunmark/simpleunmark-confidential"],
+      "provenanceImages": [
+        "docker.io/simpleunmark/simpleunmark-confidential"
+      ],
       "note": "Initial adoption of the already deployed, operator-approved image. Docker Hub provenance verified; the existing GCP copy predates automated publication."
     },
     {
@@ -29,6 +31,18 @@
         "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
       ],
       "note": "Dual-registry release from Actions run 34539701797, attempt 1. Allow alongside the existing image before website rollout; deploymentDigest deliberately remains unchanged."
+    },
+    {
+      "digest": "sha256:2172041a1e63801536220152ee9f5cc8a211178f561351e4aa8248e0c87f44bf",
+      "sourceCommit": "df49df3af068504602a5633ee42a2c07be4209b7",
+      "sourceRef": "refs/heads/main",
+      "status": "active",
+      "approvedAt": "2026-10-28",
+      "provenanceImages": [
+        "docker.io/simpleunmark/simpleunmark-confidential",
+        "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
+      ],
+      "note": "Six-minute rewrite timeout; release Actions run 40771761322, attempt 1. Retain existing deployment target during browser policy rollout."
     }
   ]
 }
