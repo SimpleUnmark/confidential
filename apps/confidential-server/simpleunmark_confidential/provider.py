@@ -5,6 +5,7 @@ import json
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from math import ceil
 from typing import Protocol
 
 import httpx
@@ -55,6 +56,9 @@ class RewriteProvider(Protocol):
 
 
 def _request_body(text: str, model: str) -> dict[str, object]:
+    estimated_input_tokens = ceil(len(text) / 3.5)
+    # Allow room for both reasoning and rewritten text, including on short inputs.
+    rewrite_token_budget = min(32_000, max(8_192, estimated_input_tokens * 4 + 4_096))
     return {
         "model": model,
         "messages": [
@@ -63,7 +67,7 @@ def _request_body(text: str, model: str) -> dict[str, object]:
         ],
         "temperature": 0.65,
         "top_p": 0.9,
-        "max_tokens": min(16_000, max(4_096, int(len(text) / 3.5 + 0.999) * 2 + 2_048)),
+        "max_tokens": rewrite_token_budget,
         "reasoning_effort": "low",
         "stream": True,
         "stream_options": {"include_usage": True},

@@ -36,6 +36,30 @@ async def _events(provider: DeepInfraProvider) -> list[ProviderDelta | ProviderR
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("input_length", "expected_max_tokens"),
+    [(692, 8_192), (9_176, 14_584), (40_000, 32_000)],
+)
+async def test_rewrite_request_sets_token_budget_for_input_size(
+    input_length: int, expected_max_tokens: int
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["max_tokens"] == expected_max_tokens
+        return httpx.Response(
+            200,
+            content=_stream(
+                {"choices": [{"delta": {"content": "Complete"}, "finish_reason": "stop"}]}
+            ),
+        )
+
+    provider = DeepInfraProvider(_settings(), transport=httpx.MockTransport(handler))
+    events = [event async for event in provider.stream("x" * input_length)]
+    assert isinstance(events[-1], ProviderResult)
+    assert events[-1].text == "Complete"
+    assert events[-1].attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_requires_an_explicit_stop_before_charging() -> None:
     for finish_reason in (None, "length", "content_filter"):
         transport = httpx.MockTransport(
