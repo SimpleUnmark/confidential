@@ -43,6 +43,18 @@
         "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
       ],
       "note": "Six-minute rewrite timeout; release Actions run 40771761322, attempt 1. Retain existing deployment target during browser policy rollout."
+    },
+    {
+      "digest": "sha256:cbf14afe33bfc0506f24a7860019a1b419284aea23c037c860ca3cd6c1518f4d",
+      "sourceCommit": "7fd273463691d9dfe818b17b00358a83c1aa468c",
+      "sourceRef": "refs/heads/main",
+      "status": "active",
+      "approvedAt": "2026-11-17",
+      "provenanceImages": [
+        "docker.io/simpleunmark/simpleunmark-confidential",
+        "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
+      ],
+      "note": "Doubled text rewrite token budget. Retain the existing deployment target during browser policy rollout. https://github.com/SimpleUnmark/confidential/actions/runs/44184821425/attempts/1"
     }
   ]
 }
