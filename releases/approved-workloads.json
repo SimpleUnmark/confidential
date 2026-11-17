@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "repository": "SimpleUnmark/confidential",
   "protocolVersion": 4,
-  "deploymentDigest": "sha256:2172041a1e63801536220152ee9f5cc8a211178f561351e4aa8248e0c87f44bf",
+  "deploymentDigest": "sha256:cbf14afe33bfc0506f24a7860019a1b419284aea23c037c860ca3cd6c1518f4d",
   "client": {
     "sha256": "e4ca7c8bac3375bac64c25325d87b6b8bb9d44d066960c145d5758ec5f8fced3",
     "sourceCommit": "5abe8b1f641af714287d064fdb086035a9ddbb79",
