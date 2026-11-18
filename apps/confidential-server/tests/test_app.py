@@ -18,7 +18,11 @@ from pyhpke import AEADId, CipherSuite, KDFId, KEMId
 
 import simpleunmark_confidential.app as app_module
 from simpleunmark_confidential.app import create_app
-from simpleunmark_confidential.config import Settings
+from simpleunmark_confidential.config import (
+    DEEPINFRA_FALLBACK_MODEL,
+    DEFAULT_DEEPINFRA_MODEL,
+    Settings,
+)
 from simpleunmark_confidential.crypto import (
     HPKE_INFO,
     RESPONSE_KEY_LABEL,
@@ -30,7 +34,12 @@ from simpleunmark_confidential.crypto import (
     response_aad,
 )
 from simpleunmark_confidential.media import MEDIA_REQUEST_MAGIC, MEDIA_RESPONSE_MAGIC
-from simpleunmark_confidential.provider import ProviderDelta, ProviderEvent, ProviderResult
+from simpleunmark_confidential.provider import (
+    DeepInfraProvider,
+    ProviderDelta,
+    ProviderEvent,
+    ProviderResult,
+)
 from simpleunmark_confidential.receipts import ReceiptResult
 from simpleunmark_confidential.text import count_words
 
@@ -482,6 +491,49 @@ async def test_rejects_text_that_does_not_match_the_signed_measurements() -> Non
 
     assert response.status_code == 403
     assert receipts.values == []
+
+
+@pytest.mark.asyncio
+async def test_confidential_rewrites_emoji_after_primary_model_overload() -> None:
+    source = "Hello 👋\n\nThe museum opens at nine."
+    rewritten = "Hi 👋\n\nThe museum opens at 9 a.m."
+    requested_models: list[str] = []
+
+    def deepinfra(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["messages"][-1]["content"] == source
+        requested_models.append(payload["model"])
+        if len(requested_models) == 1:
+            return httpx.Response(429, json={"error": {"code": "engine_overloaded"}})
+        chunk = {"choices": [{"delta": {"content": rewritten}, "finish_reason": "stop"}]}
+        return httpx.Response(200, text=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n")
+
+    settings = replace(_settings(), require_client_attestation=True)
+    receipts = FakeReceipts()
+    app = create_app(
+        settings,
+        provider=DeepInfraProvider(settings, transport=httpx.MockTransport(deepinfra)),
+        receipts=receipts,  # type: ignore[arg-type]
+        attestation=FakeAttestation(),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://tee.example",
+    ) as client:
+        headers, body, decryptor, _ = await _attest_and_encrypt(
+            client, _capability(source), source
+        )
+        response = await client.post("/v1/clean", headers=headers, json=body)
+
+    assert response.status_code == 200
+    assert requested_models == [DEFAULT_DEEPINFRA_MODEL, DEEPINFRA_FALLBACK_MODEL]
+    events = decryptor.decrypt(response)
+    assert [event["text"] for event in events if event["type"] == "delta"] == [rewritten]
+    assert events[-1]["result"]["cleanedText"] == rewritten
+    assert events[-1]["result"]["privacyMode"] == "CONFIDENTIAL"
+    assert [receipt["status"] for receipt in receipts.values] == ["started", "succeeded"]
+    assert receipts.values[-1]["telemetry"]["model"] == DEEPINFRA_FALLBACK_MODEL
+    assert "museum" not in json.dumps(receipts.values)
 
 
 @pytest.mark.asyncio

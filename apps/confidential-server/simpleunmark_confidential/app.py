@@ -36,6 +36,8 @@ from .media import (
 from .provider import (
     DeepInfraProvider,
     ProviderDelta,
+    ProviderError,
+    ProviderFailure,
     ProviderResult,
     RewriteProvider,
 )
@@ -181,8 +183,9 @@ def _telemetry(
     deterministic_ms: int,
     total_ms: int,
     strong_applied: bool,
+    provider_failure: ProviderFailure | None = None,
 ) -> dict[str, object]:
-    return {
+    telemetry: dict[str, object] = {
         "source": "watermarks-remover",
         "strongApplied": strong_applied,
         "model": provider.model if provider else None,
@@ -198,6 +201,13 @@ def _telemetry(
         "totalMs": total_ms,
         "providerAttempts": provider.attempts if provider else 0,
     }
+    failure = provider_failure or (provider.failure if provider else None)
+    if failure is not None:
+        diagnostic: dict[str, object] = {"kind": failure.kind}
+        if failure.http_status is not None:
+            diagnostic["httpStatus"] = failure.http_status
+        telemetry["providerFailure"] = diagnostic
+    return telemetry
 
 
 def _plain_event(event: dict[str, object]) -> bytes:
@@ -353,7 +363,7 @@ async def _processing_stream(
         except (asyncio.CancelledError, ReceiptError):
             pass
         raise
-    except Exception:
+    except Exception as error:
         elapsed = round((time.perf_counter() - started_at) * 1000)
         failure = {
             **_receipt_base(capability, "failed"),
@@ -363,6 +373,7 @@ async def _processing_stream(
                 deterministic_ms=deterministic_ms,
                 total_ms=elapsed,
                 strong_applied=False,
+                provider_failure=error.failure if isinstance(error, ProviderError) else None,
             ),
         }
         try:

@@ -11,6 +11,8 @@ from simpleunmark_confidential.config import Settings
 from simpleunmark_confidential.provider import (
     DeepInfraProvider,
     ProviderDelta,
+    ProviderError,
+    ProviderFailure,
     ProviderResult,
 )
 
@@ -150,3 +152,34 @@ async def test_total_deadline_bounds_a_stalled_transport() -> None:
     assert isinstance(events[-1], ProviderResult)
     assert events[-1].text is None
     assert events[-1].attempts == 1
+    assert events[-1].failure == ProviderFailure("timeout")
+
+
+@pytest.mark.asyncio
+async def test_reports_an_http_failure_without_retaining_the_response_body() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(400, text="Upstream body with user content")
+    )
+    events = await _events(DeepInfraProvider(_settings(), transport=transport))
+    assert len(events) == 1
+    assert isinstance(events[-1], ProviderResult)
+    assert events[-1].text is None
+    assert events[-1].attempts == 1
+    assert events[-1].failure == ProviderFailure("http", 400)
+    assert "user content" not in repr(events)
+
+
+@pytest.mark.asyncio
+async def test_never_retries_after_streaming_output() -> None:
+    attempts = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        partial = _stream({"choices": [{"delta": {"content": "Partial 👋"}}]})
+        return httpx.Response(200, content=partial.replace(b"[DONE]", b"not JSON"))
+
+    with pytest.raises(ProviderError) as failed:
+        await _events(DeepInfraProvider(_settings(), transport=httpx.MockTransport(handler)))
+    assert attempts == 1
+    assert failed.value.failure == ProviderFailure("invalid_stream")
