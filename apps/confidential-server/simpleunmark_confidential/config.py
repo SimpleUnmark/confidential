@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 DEFAULT_DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai"
 DEFAULT_DEEPINFRA_MODEL = "deepseek-ai/DeepSeek-V4-Flash-0731"
+DEEPINFRA_FALLBACK_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
 DEFAULT_ATTESTATION_AUDIENCE = "https://simpleunmark.com/confidential-workload/v1"
 
 
