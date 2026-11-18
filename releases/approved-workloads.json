@@ -55,6 +55,18 @@
         "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
       ],
       "note": "Doubled text rewrite token budget. Retain the existing deployment target during browser policy rollout. https://github.com/SimpleUnmark/confidential/actions/runs/44184821425/attempts/1"
+    },
+    {
+      "digest": "sha256:3e85b03c0cf76826d4833234c974cc98eecb23457267d72149cad6937fd3a27f",
+      "sourceCommit": "8cae9b1fad8958693e024705930b017846003169",
+      "sourceRef": "refs/heads/main",
+      "status": "active",
+      "approvedAt": "2026-11-18",
+      "provenanceImages": [
+        "docker.io/simpleunmark/simpleunmark-confidential",
+        "europe-west1-docker.pkg.dev/simple-unmark-prod/workloads/simpleunmark-confidential"
+      ],
+      "note": "Rewrite overload recovery and safe receipt diagnostics. Trust this image before selecting it for production. https://github.com/SimpleUnmark/confidential/actions/runs/44401274688/attempts/1"
     }
   ]
 }
